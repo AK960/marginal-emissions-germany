@@ -1,0 +1,5 @@
+name: ma
+channels:
+  - defaults
+dependencies:
+  - python
