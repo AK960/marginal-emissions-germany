@@ -13,6 +13,9 @@
 #    The desired script / playbook can now import the module as "import marginal_emissions as me" or alternatively
 #    "from marginal_emissions import utils"
 #
+#.VERSIONS
+#    [0.1][2025-09-04] Initial setup of environment and dependencies for installation of package "marginal_emissions"
+#
 #.EXAMPLE
 #    [pyproject.toml]
 #    --> see bottom
@@ -27,7 +30,7 @@
 #    [terminal]
 #    pip install -e .
 #
-#    [scripts/test.py]
+#    [scripts/testEditableInstallation.py]
 #    import marginal_emissions as me
 #    me.say_hello()
 
@@ -39,8 +42,7 @@ build-backend = "setuptools.build_meta"
 name = "marginal_emissions"
 version = "0.1"
 #dependencies = [ # For adding installation dependencies of the package later on
-#   "pandas>=2.0.0",
-#   "requests>=2.28.0",
+#   "pandas>=2.0.0"
 #]
 
 [tool.setuptools]

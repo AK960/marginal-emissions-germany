@@ -1,17 +1,5 @@
-"""
-.SYNOPSIS
-    Creating installable src package.
+# see pyproject.toml for explanation
 
-.DESCRIPTION
-    This file makes it possible to install the package in the virtual environment and make it available globally for
-    scripts and notebooks to use.
-
-.PARAMETER
-    Beschreibt einen spezifischen Parameter des Moduls.
-
-.EXAMPLE
-    Zeigt ein Beispiel für die Verwendung des Moduls.
-"""
 from setuptools import setup, find_packages
 
 setup(
