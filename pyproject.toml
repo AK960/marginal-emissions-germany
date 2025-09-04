@@ -1,0 +1,48 @@
+#.SYNOPSIS
+#    Creating installable src package.
+#
+#.DESCRIPTION
+#    This file makes it possible to install the package in the virtual environment and make it available globally for
+#    scripts and notebooks to use.
+#    Priorly, the setup.py fulfilled this purpose but is deprecated in pip 25.3. Thus, this will be fulfilled here.
+#
+#.USAGE
+#    For the installation to work correctly, the __init__.py must contain the import of the functions / modules within
+#    the package, i.e., "from .utils import say_hello".
+#    To install the package, run "pip install -e ." in the terminal with the respective env activated.
+#    The desired script / playbook can now import the module as "import marginal_emissions as me" or alternatively
+#    "from marginal_emissions import utils"
+#
+#.EXAMPLE
+#    [pyproject.toml]
+#    --> see bottom
+#
+#    [src/utils.py]
+#    def say_hello():
+#       print("Hello from marginal_emissions!")
+#
+#    [src/__init__.py]
+#    from .utils import say_hello
+#
+#    [terminal]
+#    pip install -e .
+#
+#    [scripts/test.py]
+#    import marginal_emissions as me
+#    me.say_hello()
+
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marginal_emissions"
+version = "0.1"
+#dependencies = [ # For adding installation dependencies of the package later on
+#   "pandas>=2.0.0",
+#   "requests>=2.28.0",
+#]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = {find = {where = ["src"]}}
