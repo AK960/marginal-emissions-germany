@@ -41,9 +41,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "marginal_emissions"
 version = "0.1"
-#dependencies = [ # For adding installation dependencies of the package later on
-#   "pandas>=2.0.0"
-#]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -1,7 +1,7 @@
 README.md
 pyproject.toml
-setup.py
 src/marginal_emissions/__init__.py
+src/marginal_emissions/api_requests.py
 src/marginal_emissions/utils.py
 src/marginal_emissions.egg-info/PKG-INFO
 src/marginal_emissions.egg-info/SOURCES.txt
