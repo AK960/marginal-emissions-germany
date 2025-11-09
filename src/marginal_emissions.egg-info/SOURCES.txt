@@ -1,9 +1,0 @@
-README.md
-pyproject.toml
-src/marginal_emissions/__init__.py
-src/marginal_emissions/api_requests.py
-src/marginal_emissions/utils.py
-src/marginal_emissions.egg-info/PKG-INFO
-src/marginal_emissions.egg-info/SOURCES.txt
-src/marginal_emissions.egg-info/dependency_links.txt
-src/marginal_emissions.egg-info/top_level.txt
