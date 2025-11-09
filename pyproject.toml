@@ -33,17 +33,25 @@
 #    [scripts/testEditableInstallation.py]
 #    import marginal_emissions as me
 #    me.say_hello()
-
 [build-system]
 requires = ["setuptools>=64.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "marginal_emissions"
+name = "marginal-emissions-germany"
 version = "0.1"
-#dependencies = [ # For adding installation dependencies of the package later on
-#   "pandas>=2.0.0"
-#]
+description = "Tool to compute a MEF signal for the German electricity mix"
+authors = [
+    {name = "Alexander Kleinwächter", email = "a.kleinwaechter97@gmail.com"}
+]
+readme = "README.md"
+dependencies = [ # For adding installation dependencies of the package later on
+   "pandas>=2.0.0",
+   "click>=8.0.0"
+]
+
+[project.scripts]
+energy-fetcher = "marginal_emissions.cli.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

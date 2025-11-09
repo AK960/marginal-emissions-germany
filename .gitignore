@@ -1,1 +1,9 @@
+# Python
+__pycache__/
+build/
+develop-eggs/
+*.egg-info/
+
+# IDE
 .idea/
+.vscode/
