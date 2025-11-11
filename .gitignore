@@ -7,3 +7,6 @@ develop-eggs/
 # IDE
 .idea/
 .vscode/
+
+# dotenv
+.env
