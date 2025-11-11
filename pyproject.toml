@@ -20,7 +20,7 @@
 #    [pyproject.toml]
 #    --> see bottom
 #
-#    [src/utils.py]
+#    [src/helper.py]
 #    def say_hello():
 #       print("Hello from marginal_emissions!")
 #
@@ -47,7 +47,8 @@ authors = [
 readme = "README.md"
 dependencies = [ # For adding installation dependencies of the package later on
    "pandas>=2.0.0",
-   "click>=8.0.0"
+   "click>=8.0.0",
+    "chardet"
 ]
 
 [project.scripts]
