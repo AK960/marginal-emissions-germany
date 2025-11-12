@@ -1,6 +1,4 @@
-from .. import logger as package_logger
-
-logger = package_logger
+from .. import logger
 
 __all__ = ['logger']
 
