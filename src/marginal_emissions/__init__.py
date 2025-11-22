@@ -8,7 +8,7 @@ if not logger.handlers:
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        fmt='[%(levelname)s][%(asctime)s][%(filename)s]%(message)s',
+        fmt='[%(levelname)s][%(asctime)s][%(filename)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
     logger.addHandler(handler)

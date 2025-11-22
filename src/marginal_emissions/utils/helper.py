@@ -42,6 +42,29 @@ def check_encoding(path) -> str | None:
         logger.error(e)
         return None
 
+def search_df(df, search_pattern, use_regex=False, case_sensitive=False):
+    """
+    Search the dataframe for a string and return all matching rows.
+
+    :param df: Dataframe to search.
+    :param search_pattern: String to search for.
+    :param use_regex: If true, uses regex for searching.
+    :param case_sensitive: If true, searches for the exact match.
+    :return: Dataframe with matching rows.
+    """
+    mask = df.astype(str).apply(
+        lambda col: col.str.contains(
+            search_pattern,
+            case=case_sensitive,
+            regex=use_regex,
+            na = False
+        )
+    )
+
+    result = df[mask.any(axis=1)]
+    logger.info(f"Found {len(result)} rows matching '{search_pattern}' pattern.")
+    return result
+
 
 def say_hello(self):
     print("Hello from marginal_emissions!")

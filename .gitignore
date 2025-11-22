@@ -10,3 +10,6 @@ develop-eggs/
 
 # dotenv
 .env
+
+# Python Cheatsheet
+cheatsheet.ipynb
