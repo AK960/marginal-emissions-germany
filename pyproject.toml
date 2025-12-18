@@ -52,7 +52,7 @@ dependencies = [ # For adding installation dependencies of the package later on
 ]
 
 [project.scripts]
-energy-fetcher = "marginal_emissions.cli.__main__:main"
+mef-tool = "marginal_emissions.cli.cli:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

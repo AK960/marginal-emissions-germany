@@ -13,3 +13,6 @@ develop-eggs/
 
 # Python Cheatsheet
 cheatsheet.ipynb
+
+# Tests Dir
+tests/

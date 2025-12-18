@@ -1,4 +1,4 @@
-from .. import logger
+from ... import logger
 
 __all__ = ['logger']
 

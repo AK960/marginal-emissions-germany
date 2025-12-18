@@ -1,16 +1,20 @@
 """
 This script contains helper functions.
 """
+from typing import List
+
 from . import logger
 import chardet
 from pathlib import Path
+import pandas as pd
+import pytz
 
 def check_encoding(path) -> str | None:
     """
     :description: When a file is not encoded as utf-8, this function checks and returns the encoding. Excel files are
     binary and do not have text encoded.
     :param path: Input file path.
-    :return: Encoding of input file.
+    :return: Encoding of an input file.
     """
     binary_extensions = {'.xlsx', '.xls', '.xlsm', '.xlsb'}
 
@@ -64,6 +68,15 @@ def search_df(df, search_pattern, use_regex=False, case_sensitive=False):
     result = df[mask.any(axis=1)]
     logger.info(f"Found {len(result)} rows matching '{search_pattern}' pattern.")
     return result
+
+def get_all_subdirs(base_path: str = "./data") -> List[Path]:
+    """Find subdirectories in a given path."""
+    path = Path(base_path)
+    if not path.exists():
+        return []
+
+    subdirs = sorted([p for p in path.rglob('*') if p.is_dir()])
+    return subdirs
 
 
 def say_hello(self):
