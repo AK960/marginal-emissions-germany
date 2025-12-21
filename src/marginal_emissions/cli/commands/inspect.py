@@ -14,7 +14,7 @@ def inspect_group():
 )
 def inspect_dirs(path):
     """List all directories in a given path."""
-    click.echo(f"Inspecting directories in {path}...")
+    click.echo(f"Inspecting directories in {path}")
 
     directories = get_all_subdirs(path)
 
@@ -25,6 +25,6 @@ def inspect_dirs(path):
     for d in directories:
         try:
             display_path = d.relative_to(path)
-            click.echo(f"   /{display_path}")
+            click.echo(f"./{display_path}")
         except ValueError:
-            click.echo(f"   /{d}")
+            click.echo(f"./{d}")

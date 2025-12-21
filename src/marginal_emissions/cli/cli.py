@@ -1,5 +1,8 @@
 import click
-from .commands import fetch, inspect, listapis
+
+from .commands.inspect import inspect_group
+from .commands.listapis import listapis_group
+from .commands.fetch import *
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -14,9 +17,10 @@ def cli(ctx, verbose):
     ctx.ensure_object(dict)
     ctx.obj = {'VERBOSE': verbose}
 
-cli.add_command(inspect.inspect_group, name='inspect')
-#cli.add_command(fetch.fetch_group, name='fetch')
-cli.add_command(listapis.listapis_group, name='listapis')
+cli.add_command(inspect_group, name='inspect')
+cli.add_command(fetch_group, name='fetch')
+cli.add_command(listapis_group, name='listapis')
+#cli.add_command(run_group, name='run') # TODO: Implement run_group to process data and print report
 
 if __name__ == "__main__":
     cli()

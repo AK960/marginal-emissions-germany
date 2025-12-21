@@ -75,7 +75,7 @@ class EntsoeClient(base_client.EnergyDataClient):
     def get_actual_generation_per_production_type(self):
         pass
 
-    def get_actual_generation_per_generation_unit(self):
+    def get_actual_generation_per_generation_unit(self, start_date, end_date):
         out_dir = Path("data") / "raw" / "entsoe"
         out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -88,11 +88,11 @@ class EntsoeClient(base_client.EnergyDataClient):
                 'in_Domain': self.iec_codes[code],
             }
 
-            response = self._base_request(params=params, start=QUERY_START, end=QUERY_END)
+            response = self._base_request(params=params, start=start_date, end=end_date)
 
             logger.info(f"Request returned with status code {response.status_code}")
 
-            # Write content to file
+            # Write content to a file
             try:
                 out_path = out_dir / f"{self.iec_codes[code]}.xml"
                 out_path.write_text(response.text, encoding="utf-8")
