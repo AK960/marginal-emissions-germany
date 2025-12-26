@@ -3,7 +3,7 @@ from marginal_emissions.utils.helper import get_all_subdirs
 
 @click.group(name='inspect')
 def inspect_group():
-    """Inspect data from an API."""
+    """Inspect data in a given directory."""
     pass
 
 @inspect_group.command(name='dirs')

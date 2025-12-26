@@ -14,7 +14,7 @@ EIC_CONTROL_AREA_CODES = { # Control Area Codes, others check README/Important L
     "50HERTZ": "10YDE-VE-------2",
     "AMPRION": "10YDE-RWENET---I",
     "TENNET": "10YDE-EON------1",
-    "TRANSNET_BW": "10YDE-ENBW-----N"
+    "TRANSNETBW": "10YDE-ENBW-----N"
 }
 
 # SMARD

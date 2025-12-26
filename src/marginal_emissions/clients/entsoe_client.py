@@ -1,14 +1,15 @@
 """
 This file contains the Child-Class for making requests to the Entsoe API. It inherits parameters
-and methods from the Base Client.
-"""
+and methods from the Base Client. The data retrieved using the class is considered raw data and saved in the respective directory. Engineering of an analysis dataframe will be conducted using the respective class.
+""" # TODO: Write class to create final df - not necessarily CLI
+import os.path
 from pathlib import Path
 from typing import Optional, Dict
 
 import pytz
 import requests
 from entsoe.exceptions import NoMatchingDataError
-
+import pandas as pd
 from marginal_emissions.vars import *
 from . import base_client, logger
 
@@ -59,11 +60,12 @@ class EntsoeClient(base_client.EnergyDataClient):
                 f"Timeout while calling ENTSO-E API at {self.base_url}"
             ) from e
 
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException as e: # TODO: Test again for Amprion (http-error)
             # umfasst ConnectionError, HTTPError nach raise_for_status, etc.
-            raise RuntimeError(
-                f"Request to ENTSO-E API failed at {self.base_url} with error: {e}"
-            ) from e
+            msg = f"Request to ENTSO-E API failed at {self.base_url} with error: {e}"
+            if e.response is not None:
+                msg += f"\nResponse body: {e.response.text}"
+            raise RuntimeError(msg) from e
 
         # sometimes 200 with error -> check content
         if response.headers.get('content-type', '') in ['application/xml', 'text/xml']:
@@ -75,30 +77,28 @@ class EntsoeClient(base_client.EnergyDataClient):
     def get_actual_generation_per_production_type(self):
         pass
 
-    def get_actual_generation_per_generation_unit(self, start_date, end_date):
-        out_dir = Path("data") / "raw" / "entsoe"
+    def get_actual_generation_per_generation_unit(self, area: str, start_date: pd.Timestamp, end_date: pd.Timestamp):
+        # Specify output params
+        area_name = next((key for key, val in self.iec_codes.items() if val == area), area)
+        out_dir = Path("data/raw/entsoe")
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Loop dict with area codes to retrieve data for all
-        for code in self.iec_codes:
-            logger.info(f"Requesting data from ENTSO-E API for EIC: {code}")
-            params = {
-                'documentType': 'A73',
-                'processType': 'A16',
-                'in_Domain': self.iec_codes[code],
-            }
+        logger.info(f"Requesting data from ENTSO-E API for area {area_name}")
+        params = {
+            'documentType': 'A73',
+            'processType': 'A16',
+            'in_Domain': area
+        }
+        response = self._base_request(params=params, start=start_date, end=end_date)
 
-            response = self._base_request(params=params, start=start_date, end=end_date)
-
-            logger.info(f"Request returned with status code {response.status_code}")
-
-            # Write content to a file
-            try:
-                out_path = out_dir / f"{self.iec_codes[code]}.xml"
-                out_path.write_text(response.text, encoding="utf-8")
-                logger.info(f"Data saved to {out_path}")
-            except Exception as e:
-                logger.error(f"Error saving data to file: {e}")
+        # Write content to a file
+        try:
+            out_file = out_dir / f"aggu_{area_name}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.xml"
+            out_file.write_text(response.text, encoding="utf-8")
+            logger.info(f"Data saved to {out_file}")
+        except Exception as e:
+            logger.error(f"Error saving data to file: {e}")
 
         return None
 

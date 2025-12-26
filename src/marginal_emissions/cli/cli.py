@@ -20,7 +20,7 @@ def cli(ctx, verbose):
 cli.add_command(inspect_group, name='inspect')
 cli.add_command(fetch_group, name='fetch')
 cli.add_command(listapis_group, name='listapis')
-#cli.add_command(run_group, name='run') # TODO: Implement run_group to process data and print report
+#cli.add_command(analyse_group, name='run') # TODO: Implement run_group to process data and print report
 
 if __name__ == "__main__":
     cli()

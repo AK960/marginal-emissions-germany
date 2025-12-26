@@ -1,14 +1,13 @@
-﻿from datetime import timedelta, datetime
+﻿import os
+from datetime import timedelta, datetime
 from typing import Optional
 
-from DateTime import DateTime
 import click
-
-from marginal_emissions import logger
-from marginal_emissions.clients.entsoe_client import EntsoeClient
-from marginal_emissions.vars import ENTSOE_BASE_URL, QUERY_START, QUERY_END
+import pandas as pd
 from dotenv import load_dotenv
-import os
+
+from marginal_emissions.clients.entsoe_client import EntsoeClient
+from marginal_emissions.vars import ENTSOE_BASE_URL, QUERY_START, QUERY_END, EIC_CONTROL_AREA_CODES
 
 @click.group(name='fetch')
 def fetch_group():
@@ -25,66 +24,72 @@ def fetch_group():
         case_sensitive=False
     ),
     required=True,
-    help='Specifies the specific endpoint. To check available endpoints run "mef-tool entsoe -e". If nothing else is set, request will be performed for default timeframe.'
+    help='Specifies the specific endpoint. To check available endpoints run "mef-tool entsoe -e"'
 )
 @click.option(
     '--is-test', '-t',
     is_flag=True,
-    default=True,
-    help='If set to true, fetch will be performed for one day according to default or passed value +24h.'
+    help='If set, fetch will be performed for one day according to default or passed timestamp +24h.'
+)
+@click.option(
+    '--area', '-a',
+    type=click.Choice(['50hertz', 'amprion', 'tennet', 'transnetbw'], case_sensitive=False),
+    required=True,
+    help='Specify the desired control area.'
 )
 @click.option(
     '--start-date', '-sd',
-    type=datetime,
+    type=click.DateTime(),
     default=QUERY_START,
-    help=f'Start date of dataset to be fetched. Default is {QUERY_START}. Format: "yyyy-mm-dd"'
+    help=f'Start date of dataset to be fetched. Default is {QUERY_START}. Format must be "yyyy-mm-dd"'
 )
 @click.option(
     '--end-date', '-ed',
-    type=datetime,
-    default=QUERY_START + timedelta(hours=24),
-    help=f'End date of dataset to be fetched. Default is {QUERY_END}. Format: "yyyy-mm-dd"'
+    type=click.DateTime(),
+    default=QUERY_END,
+    help=f'End date of dataset to be fetched. Default is {QUERY_END}. Format must be "yyyy-mm-dd"'
 )
 def fetch_entsoe(
         req_type,
         is_test,
+        area,
         start_date: Optional[datetime],
         end_date: Optional[datetime]
 ):
+    """Fetch data from the ENTSO-E API."""
     if is_test:
+        end_date = start_date + timedelta(days=1)
+        click.echo("[TEST] Performing test run")
 
-        if not start_date:
-            start_date = QUERY_START
-        if not end_date:
-            end_date = start_date + timedelta(hours=24)
-        click.echo(f'[TEST_RUN] from {start_date.Date()} until {end_date.Date()}')
+    # Convert to pandas datetime
+    try:
+        start_date = pd.to_datetime(start_date, format='%Y-%m-%d')
+        end_date = pd.to_datetime(end_date, format='%Y-%m-%d')
+    except ValueError:
+        raise ValueError("Start and end date must be datetime objects.")
 
-    # Load vars
-    load_dotenv()
-    api_key = os.getenv("ENTSOE_API_KEY")
-    base_url = ENTSOE_BASE_URL
-
-    if not api_key:
-        click.echo("API key cannot be None.")
-        return
-    if not base_url:
-        click.echo("Endpoint cannot be None.")
-        return
+    # Load base vars
+    try:
+        load_dotenv()
+        api_key = os.getenv("ENTSOE_API_KEY")
+        base_url = ENTSOE_BASE_URL
+        area = EIC_CONTROL_AREA_CODES[area.upper()]
+    except ValueError:
+        raise ValueError("API key, endpoint, or area cannot be None.")
 
     client = EntsoeClient(
         api_key=api_key,
-        base_url=ENTSOE_BASE_URL
+        base_url=base_url
     )
 
     match req_type:
         case 'actual_generation_per_generation_unit' | 'aggu':
-            click.echo("Fetching generation data per generation unit...")
+            click.echo(f"Fetching generation data per generation unit from {start_date} to {end_date}")
             client.get_actual_generation_per_generation_unit(
+                area=area,
                 start_date=start_date,
                 end_date=end_date
             )
         case 'actual_generation_per_production_type' | 'agpt':
-            click.echo("Fetching generation data per production type...")
+            click.echo(f"Fetching generation data per production type from {start_date.date()} to {end_date.date()}")
             pass
-
-# TODO: Implement date parsing function
