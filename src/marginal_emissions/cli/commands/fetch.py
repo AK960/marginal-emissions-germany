@@ -92,4 +92,9 @@ def fetch_entsoe(
             )
         case 'actual_generation_per_production_type' | 'agpt':
             click.echo(f"Fetching generation data per production type from {start_date.date()} to {end_date.date()}")
+            client.get_actual_generation_per_production_type(
+                area=area,
+                start_date=start_date,
+                end_date=end_date
+            )
             pass

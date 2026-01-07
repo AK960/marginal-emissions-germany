@@ -10,6 +10,7 @@ This project contains a Python pipeline to compute marginal emission factors for
 - [EIC Manual & Codes](https://www.entsoe.eu/data/energy-identification-codes-eic/)
 - [Detailed Data Description](https://eepublicdownloads.entsoe.eu/clean-documents/Transparency/MoP_Ref2_DDD_v3r4.pdf)
 - [Transparency Platform Guide](https://transparencyplatform.zendesk.com/hc/en-us/categories/13771885458964-Guides) <!-- Data consumers: MoP Ref2 and Ref19 recommended -->
+- [API Parameter Guide](https://transparencyplatform.zendesk.com/hc/en-us/articles/15692855254548-Sitemap-for-Restful-API-Integration)
 
 
 ### SMARD

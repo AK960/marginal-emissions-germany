@@ -1,13 +1,14 @@
 """
 This file contains the Child-Class for making requests to the Entsoe API. It inherits parameters
-and methods from the Base Client. The data retrieved using the class is considered raw data and saved in the respective directory. Engineering of an analysis dataframe will be conducted using the respective class.
-""" # TODO: Write class to create final df - not necessarily CLI
+and methods from the Base Client. The data retrieved using the class is considered raw data and saved in the respective directory.
+"""
 from pathlib import Path
 from typing import Optional, Dict
 
 import pytz
 import requests
 from entsoe.exceptions import NoMatchingDataError
+from entsoe.parsers import parse_generation
 
 from marginal_emissions.vars import *
 from . import base_client, logger
@@ -72,9 +73,7 @@ class EntsoeClient(base_client.EnergyDataClient):
 
         return response
 
-    def get_actual_generation_per_production_type(self):
-        pass
-
+    # aggu: A73
     def get_actual_generation_per_generation_unit(self, area: str, start_date: pd.Timestamp, end_date: pd.Timestamp):
         # Specify output params
         area_name = next((key for key, val in self.iec_codes.items() if val == area), area)
@@ -92,13 +91,49 @@ class EntsoeClient(base_client.EnergyDataClient):
 
         # Write content to a file
         try:
-            out_file = out_dir / f"aggu_{area_name}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.xml"
-            out_file.write_text(response.text, encoding="utf-8")
-            logger.info(f"Data saved to {out_file}")
-        except Exception as e:
-            logger.error(f"Error saving data to file: {e}")
+            df = parse_generation(response.text)
+            file_extension = ".csv"
+        except Exception:
+            logger.error(f"Error parsing generation data. Saving raw XML.")
+            file_extension = ".xml"
 
-        return None
+        out_file = out_dir / f"aggu_{area_name}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}{file_extension}"
+        if file_extension == ".csv":
+            df.to_csv(out_file)
+        else:
+            out_file.write_text(response.text, encoding="utf-8")
+        logger.info(f"Data saved to {out_file}")
+
+    # agpt: A75
+    def get_actual_generation_per_production_type(self, area: str, start_date: pd.Timestamp, end_date: pd.Timestamp):
+        # Specify output params
+        area_name = next((key for key, val in self.iec_codes.items() if val == area), area)
+        out_dir = Path("data/raw/entsoe")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Loop dict with area codes to retrieve data for all
+        logger.info(f"Requesting data from ENTSO-E API for area {area_name}")
+        params = {
+            'documentType': 'A75',
+            'processType': 'A16',
+            'in_Domain': area
+        }
+        response = self._base_request(params=params, start=start_date, end=end_date)
+
+        # Write content to a file
+        try:
+            df = parse_generation(response.text)
+            file_extension = ".csv"
+        except Exception:
+            logger.error(f"Error parsing generation data. Saving raw XML.")
+            file_extension = ".xml"
+
+        out_file = out_dir / f"agpt_{area_name}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}{file_extension}"
+        if file_extension == ".csv":
+            df.to_csv(out_file)
+        else:
+            out_file.write_text(response.text, encoding="utf-8")
+        logger.info(f"Data saved to {out_file}")
 
     @staticmethod
     def _datetime_to_str(dtm: pd.Timestamp) -> str:
@@ -112,4 +147,14 @@ class EntsoeClient(base_client.EnergyDataClient):
             dtm = dtm.tz_convert("UTC")
         fmt = '%Y%m%d%H00'
         ret_str = dtm.round(freq='h').strftime(fmt)
+
         return ret_str
+
+    @staticmethod
+    def _convert_to_dataframe():
+        """
+        Convert the xml-response of the ENTSO-e API to a pandas dataframe.
+
+        :return: df from initial xml-response
+        """
+        pass
