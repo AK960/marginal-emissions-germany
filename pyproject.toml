@@ -30,7 +30,7 @@
 #    [terminal]
 #    pip install -e .
 #
-#    [scripts/testEditableInstallation.py]
+#    [scripts/test_editableInstallation.py]
 #    import marginal_emissions as me
 #    me.say_hello()
 [build-system]
