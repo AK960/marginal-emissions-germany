@@ -75,6 +75,14 @@ class EntsoeClient(base_client.EnergyDataClient):
 
     # aggu: A73
     def get_actual_generation_per_generation_unit(self, area: str, start_date: pd.Timestamp, end_date: pd.Timestamp):
+        """
+        Query actual generation per generation unit from ENTSO-E API, using _base_request method. Converts response to pandas Dataframe and saves it as a file.
+
+        :param area: EIC area code
+        :param start_date: Date to start the query
+        :param end_date: Date to finish the query
+        :return: None, save response as a file
+        """
         # Specify output params
         area_name = next((key for key, val in self.iec_codes.items() if val == area), area)
         out_dir = Path("data/raw/entsoe")
@@ -93,7 +101,7 @@ class EntsoeClient(base_client.EnergyDataClient):
         try:
             df = parse_generation(response.text)
             file_extension = ".csv"
-        except Exception:
+        except NoMatchingDataError:
             logger.error(f"Error parsing generation data. Saving raw XML.")
             file_extension = ".xml"
 
@@ -106,6 +114,14 @@ class EntsoeClient(base_client.EnergyDataClient):
 
     # agpt: A75
     def get_actual_generation_per_production_type(self, area: str, start_date: pd.Timestamp, end_date: pd.Timestamp):
+        """
+        Query actual generation per production type from ENTSO-E API, using _base_request method. Converts response to pandas Dataframe and saves it as a file.
+
+        :param area: EIC area code, check
+        :param start_date: Date to start the query
+        :param end_date: Date to finish the query
+        :return: None, save response as a file
+        """
         # Specify output params
         area_name = next((key for key, val in self.iec_codes.items() if val == area), area)
         out_dir = Path("data/raw/entsoe")
@@ -124,7 +140,7 @@ class EntsoeClient(base_client.EnergyDataClient):
         try:
             df = parse_generation(response.text)
             file_extension = ".csv"
-        except Exception:
+        except NoMatchingDataError:
             logger.error(f"Error parsing generation data. Saving raw XML.")
             file_extension = ".xml"
 
@@ -149,12 +165,3 @@ class EntsoeClient(base_client.EnergyDataClient):
         ret_str = dtm.round(freq='h').strftime(fmt)
 
         return ret_str
-
-    @staticmethod
-    def _convert_to_dataframe():
-        """
-        Convert the xml-response of the ENTSO-e API to a pandas dataframe.
-
-        :return: df from initial xml-response
-        """
-        pass
