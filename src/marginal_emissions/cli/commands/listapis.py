@@ -1,3 +1,7 @@
+"""
+CLI command for listing available APIs.
+"""
+
 import click
 from marginal_emissions.conf.vars import AVAILABLE_APIS
 

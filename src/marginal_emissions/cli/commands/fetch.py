@@ -1,4 +1,8 @@
-﻿import os
+﻿"""
+CLI command for fetching data from an API.
+"""
+
+import os
 from datetime import timedelta, datetime
 from typing import Optional
 

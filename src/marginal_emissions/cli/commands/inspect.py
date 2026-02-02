@@ -1,3 +1,7 @@
+"""
+CLI command for inspecting data in a given directory.
+"""
+
 import click
 from marginal_emissions.utils.helper import get_all_subdirs
 

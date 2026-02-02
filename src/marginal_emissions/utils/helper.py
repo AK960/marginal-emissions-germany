@@ -1,5 +1,5 @@
 """
-This script contains helper functions.
+Helper functions for the CLI commands
 """
 from typing import List
 
