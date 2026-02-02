@@ -38,7 +38,7 @@ class SmardClient:
 
     def _convert_indices(self):
         """
-        The function is applied to the returned json file from _get_indices and converts the index series from ms into a dictionary with indices and corresponding UTC timestamp.
+        The function is applied to the returned JSON file from _get_indices and converts the index series from ms into a dictionary with indices and corresponding UTC timestamp.
         :return: Dictionary
         """
         pass
