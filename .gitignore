@@ -19,3 +19,6 @@ tests/
 
 # Gem Markdown
 GEMINI.md
+
+# Enercon file
+notebooks/enercon_msdr.ipynb
