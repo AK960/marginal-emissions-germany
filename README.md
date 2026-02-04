@@ -20,3 +20,9 @@ This project contains a Python pipeline to compute marginal emission factors for
 
 ### SMARD
 - [SMARD API Documentation](https://smard.api.bund.dev/)
+
+### Agora
+
+### MSDR
+- [MarkovRegression Model Documentation](https://www.statsmodels.org/stable/generated/statsmodels.tsa.regime_switching.markov_regression.MarkovRegression.html)
+- 

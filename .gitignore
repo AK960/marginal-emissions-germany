@@ -20,5 +20,6 @@ tests/
 # Gem Markdown
 GEMINI.md
 
-# Enercon file
+# Unnecessary files
+notebooks/code_dump.ipynb
 notebooks/enercon_msdr.ipynb
