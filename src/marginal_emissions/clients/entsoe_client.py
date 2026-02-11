@@ -1,6 +1,6 @@
 """
-    This file contains the Child-Class for making requests to the Entsoe API. It inherits parameters
-    and methods from the Base Client. The data retrieved using the class is considered raw data and saved in the respective directory.
+This file contains the Child-Class for making requests to the Entsoe API. It inherits parameters
+and methods from the Base Client. The data retrieved using the class is considered raw data and saved in the respective directory.
 """
 
 from pathlib import Path

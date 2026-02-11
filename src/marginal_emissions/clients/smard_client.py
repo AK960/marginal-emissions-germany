@@ -1,5 +1,5 @@
 """
-    This file contains the Client for making requests to the SMARD API. The data retrieved is considered raw data and is saved in the respective directory. API does not require authentication.
+This file contains the Client for making requests to the SMARD API. The data retrieved is considered raw data and is saved in the respective directory. API does not require authentication.
 """
 
 from pathlib import Path

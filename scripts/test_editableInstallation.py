@@ -1,4 +1,5 @@
-from marginal_emissions import utils as u
+from marginal_emissions import utils
 
-u.utils.say_hello()
+utils.say_hello()
+
 

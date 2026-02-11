@@ -25,4 +25,5 @@ This project contains a Python pipeline to compute marginal emission factors for
 
 ### MSDR
 - [MarkovRegression Model Documentation](https://www.statsmodels.org/stable/generated/statsmodels.tsa.regime_switching.markov_regression.MarkovRegression.html)
+- [Heteroskedasticity Explanation](https://www.google.com/search?q=heteroskedasticity&oq=heteroskedasticity&gs_lcrp=EgRlZGdlKgkIABBFGDkYgAQyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIGCAMQABgeMgYIBBAAGB4yBggFEAAYHjIGCAYQABgeMgYIBxAAGB7SAQczMzFqMGoxqAIAsAIA&sourceid=chrome&ie=UTF-8#fpstate=ive&vld=cid:63ab98e5,vid:ZIOnCoi1ZRw,st:0)
 - 
