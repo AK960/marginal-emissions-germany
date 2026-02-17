@@ -66,11 +66,12 @@ class MSDRAnalyzer:
             'switching_variance': [True] # Allows different variance for each regime (Default = False)
         }
         ## Outcomes
-        self.summary = [] # Contains values from instance.summary() in machine readable form (not as text)
-        self.prep_df = None # Shifted and z-transformed original df
-        self.estimated_emi = None # DataFrame with estimated emissions from instance.predict(), used to plot true vs. estimated emissions
-        self.best_model_results = [] # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
-        self.best_model_coefficients = pd.DataFrame(columns=['Intercept_regime0', 'Intercept_regime1', 'Intercept_regime2', 'Generation_regime0', 'Generation_regime1', 'Generation_regime2']) # Will store mef factors of each regime
+        self.indicators = []            # Contains indicators of the best model for evaluation --> not flat thus list not df
+        self.prep_df = None             # Shifted and z-transformed original df
+        self.estimated_emi = None       # DataFrame with estimated emissions from predict(), used to plot true vs. estimated emissions
+        self.best_model_results = []    # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
+        self.best_maes = []             # Stores best maes from chosen best model in fit()
+        self.df_summary_coeffs = None   # Contains values from summary() in machine readable form (not as text)
         self.df_mef_scaled = pd.DataFrame(columns=['intercept_scaled', 'mef_scaled']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
         self.df_mef_absolute = None
 
@@ -134,10 +135,11 @@ class MSDRAnalyzer:
         logger.info(f"Starting MSDR analysis for {self.tso} on {len(self.prep_df) - self.window_length + 1} rows...")
         try:
             # Parallel execution with a progress bar
-            self.best_model_results = Parallel(n_jobs=self.n_jobs)(
+            results = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._process_window)(i, self.prep_df)
                 for i in tqdm(range(len(self.prep_df) - self.window_length + 1), desc=f"Analyzing {self.tso}...")
             )
+            self.best_model_results, self.best_maes = zip(*results)
         except Exception as e:
             logger.error(f'Failed to run analysis. Exit with error: {e}')
 
@@ -189,11 +191,12 @@ class MSDRAnalyzer:
 
         for i in range(iterator):
             msdr_results = self.best_model_results[i]
+            mae = self.best_maes[i]
             timestamp = self.prep_df.index[i + self.window_length - 1] # Timestamp for the result is the END of the window
 
             if msdr_results is not None:
                 # For each timestamp, save .summary() coefficients in list
-                df_coeffs = pd.concat(
+                df_summary_coeffs = pd.concat(
                     [
                         msdr_results.params,    # coef
                         msdr_results.bse,       # std_err
@@ -203,23 +206,24 @@ class MSDRAnalyzer:
                     ],
                     axis=1
                 )
-                df_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
+                df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
 
-                row_summary = {
+                indicator_row = {
                     'timestamp': timestamp,
-                    'mle_converged': msdr_results.mle_retvals['converged'],
-                    'coeffs': df_coeffs,
+                    'k_regimes': msdr_results._results.k_regimes,
                     'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1],
-                    'aic': msdr_results.aic,
+                    'mae': mae,
+                    'aic': msdr_results.aic,    # aic = 2k - 2 ln(L) // k = no. model params, L = max Log Likelihood function (no params vs. model fit)
                     'bic': msdr_results.bic,
                     'hqic': msdr_results.hqic,
-                    'llf': msdr_results.llf
+                    'llf': msdr_results.llf,
+                    'mle_converged': msdr_results.mle_retvals['converged']
                 }
-                self.summary.append(row_summary)
+                self.indicators.append(indicator_row)
 
                 # For extracting coeffs and iterating
-                params = row_summary['coeffs'].coef
-                smoothed_probs = row_summary['smoothed_probs']
+                params = indicator_row['coeffs'].coef
+                smoothed_probs = indicator_row['smoothed_probs']
 
                 # 1. Find Intercepts
                 intercepts = {}
@@ -248,16 +252,6 @@ class MSDRAnalyzer:
                         if 'x1' in params: gen_coeffs[r] = params['x1']
                         elif 'total_generation' in params: gen_coeffs[r] = params['total_generation']
 
-                # Store raw coefficients for debugging/analysis
-                self.best_model_coefficients.loc[timestamp] = [
-                    intercepts.get(0, np.nan), 
-                    intercepts.get(1, np.nan),
-                    intercepts.get(2, np.nan),
-                    gen_coeffs.get(0, np.nan), 
-                    gen_coeffs.get(1, np.nan), 
-                    gen_coeffs.get(2, np.nan)
-                ]
-                
                 # 3. Calculate Weighted Averages (Combined MEF and Intercept)
                 combined_gen_coeff = 0
                 combined_intercept = 0
@@ -283,9 +277,9 @@ class MSDRAnalyzer:
                 }
 
         # Save to file
-        self._save_to_file(data=self.best_model_coefficients, sub_dir='tables', filename='df_best_coefficients.csv')
+        self._save_to_file(data=self.df_summary_coeffs, sub_dir='tables', filename='df_summary_coefficients.csv')
         self._save_to_file(data=self.df_mef_scaled, sub_dir='tables', filename='df_mef_scaled.csv')
-        self._save_to_file(data=self.summary, sub_dir='summary', filename='summary.pkl')
+        self._save_to_file(data=self.indicators, sub_dir='summary', filename='indicators.pkl')
         self._inverse_transform_mef()
 
     def merge_mef(self):
@@ -318,23 +312,72 @@ class MSDRAnalyzer:
         :param data: DataFrame with 'total_emissions' and 'total_generation' columns
         :returns best_result: Determined model parameters
         """
-        # TODO: Add aic check for model picking
         current_window = data.iloc[i : i + self.window_length]
 
         # Ensure the window has the frequency set (important for statsmodels)
         if current_window.index.freq is None:
             current_window = current_window.asfreq('15min')
 
+        # Model selection params
+        best_converged = False
         best_model = None
         best_mae = np.inf
+        best_aic = np.inf
 
         for params in ParameterGrid(self.param_grid):
             result, aic, mae = self._fit_markov_model(current_window, params)
-            if mae < best_mae:
+
+            if result is None:
+                continue
+
+            # Check if the model converged
+            is_converged = result.mle_retvals['converged']
+
+            # TODO: Refine selection logic with aic (for model performance and mle convergence): which one to choose?
+
+            ## mae model selection
+            """
+            # Case 1: No best model yet
+            if best_model is None:
                 best_model = result
                 best_mae = mae
+                best_aic = aic
+                best_converged = is_converged
+            # Case 2: The new model converged, the old did not -> Take converged one
+            elif is_converged and not best_converged:
+                best_model = result
+                best_mae = mae
+                best_aic = aic
+                best_converged = True
+            # Case 3: Both converged / did not converge -> Take the one with better mae
+            elif is_converged == best_converged:
+                if mae < best_mae:
+                    best_model = result
+                    best_mae = mae
+            """
+            ## aic model selection
+            # Case 1: No best model yet
+            if best_model is None:
+                best_model = result
+                best_mae = mae
+                best_aic = aic
+                best_converged = is_converged
 
-        return best_model
+            # Case 2: The new model converged, the old did not -> Take converged one
+            elif is_converged and not best_converged:
+                best_model = result
+                best_mae = mae
+                best_aic = aic
+                best_converged = True
+
+            # Case 3: Both converged / did not converge -> Take the one with better aic
+            elif is_converged == best_converged:
+                if aic < best_aic:
+                    best_model = result
+                    best_mae = mae
+                    best_aic = aic
+
+        return best_model, best_mae
 
     @staticmethod
     def _fit_markov_model(window_data, params):
@@ -537,5 +580,3 @@ class MSDRAnalyzer:
         print(f"  - Negative Emissions Values: {(df['total_emissions'] < 0).sum()}")
         print(f"  - Rows with NaN Values: {(df.isnull().sum()).sum()}")
         print("")
-
-    # TODO: Implement Merge function for self.df_mef (inv_transformed) to original data
