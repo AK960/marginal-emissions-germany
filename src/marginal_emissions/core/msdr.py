@@ -4,7 +4,6 @@ Class for performing the MSDR analysis
 
 import os
 import warnings
-from datetime import datetime
 
 import joblib
 import matplotlib.pyplot as plt
@@ -37,7 +36,7 @@ class MSDRAnalyzer:
         window_length=672, # 1 week = 7*24*4
         param_grid=None,
         n_jobs=-1,
-        run = 1
+        run = '1'
     ):
         """
         Initialize a MSDR Analysis Object
@@ -52,7 +51,6 @@ class MSDRAnalyzer:
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
-        self.inv_transformer = 0.0
         # Analysis
         ## Data
         self.df = data
@@ -68,11 +66,13 @@ class MSDRAnalyzer:
             'switching_variance': [True] # Allows different variance for each regime (Default = False)
         }
         ## Outcomes
-        self.prep_df = None # Prepared data (shifted & scaled)
-        self.estimated_emi = None
-        self.best_model_results = [] # Will store the best model estimated and its parameters for each timestamp
+        self.summary = [] # Contains values from instance.summary() in machine readable form (not as text)
+        self.prep_df = None # Shifted and z-transformed original df
+        self.estimated_emi = None # DataFrame with estimated emissions from instance.predict(), used to plot true vs. estimated emissions
+        self.best_model_results = [] # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
         self.best_model_coefficients = pd.DataFrame(columns=['Intercept_regime0', 'Intercept_regime1', 'Intercept_regime2', 'Generation_regime0', 'Generation_regime1', 'Generation_regime2']) # Will store mef factors of each regime
-        self.df_mef_scaled = pd.DataFrame(columns=['Intercept', 'Generation_combined']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
+        self.df_mef_scaled = pd.DataFrame(columns=['intercept_scaled', 'mef_scaled']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
+        self.df_mef_absolute = None
 
     # ____________________ Public functions ____________________#
     def prepare(self):
@@ -89,7 +89,7 @@ class MSDRAnalyzer:
 
             logger.info("II. DATA PREPARATION")
             # Calculating the delta between two consecutive rows to eliminate trends
-            print(f"  1) Calculation delta for time series:")
+            logger.info("1) Calculation delta for time series:")
             delta_df = df - df.shift(1)
             delta_df = delta_df[1:]  # Dropping the first row will be NaN
 
@@ -112,7 +112,6 @@ class MSDRAnalyzer:
             delta_df[['total_generation', 'total_emissions']] = self.scaler.fit_transform(
                 delta_df[['total_generation', 'total_emissions']]
             )
-            self.inv_transformer = self.scaler.scale_[1] / self.scaler.scale_[0]
 
             print(delta_df.head())
 
@@ -130,7 +129,7 @@ class MSDRAnalyzer:
     def fit(self):
         # TODO: Implement analysis of models (computing key metrics for model evaluation)
         """
-        Fits a msdr model for each timestamp in the series. Because it is computationally expensive, a list of the best models is saved in s stateful variable and as file.
+        Fits a msdr model for each timestamp in the time series.
         """
         logger.info(f"Starting MSDR analysis for {self.tso} on {len(self.prep_df) - self.window_length + 1} rows...")
         try:
@@ -142,16 +141,13 @@ class MSDRAnalyzer:
         except Exception as e:
             logger.error(f'Failed to run analysis. Exit with error: {e}')
 
-        # Saving best model results to file
-        self._save_best_model_results_to_file()
-
         logger.info(f"Analysis for {self.tso} complete.\n")
 
     def predict(self):
         """
         Estimates the emission time series using the best model for each window.
         """
-        if not self.prep_df:
+        if self.prep_df.empty:
             raise ValueError("Data not prepared yet. Call prepare() first.")
         if not self.best_model_results:
             raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
@@ -174,31 +170,57 @@ class MSDRAnalyzer:
                 print(f'No results for window ending on {reg_win.index[-1]}')
 
         logger.info("Plotting estimated emissions...")
-        self._save_df_to_file(data=self.estimated_emi, filename='df_estimated_emissions.csv')
+        self._save_to_file(data=self.estimated_emi, sub_dir='tables', filename='df_estimated_emissions.csv')
         self._plot_estimated_emissions()
 
     def compute(self):
         """
-        Extracts the Marginal Emission Factor (MEF) from the best models by calculating a weighted average of the regime-specific coefficients based on smoothed probabilities.
+        Computes the Marginal Emission Factor (MEF) from the best models by calculating a weighted average of the regime-specific coefficients based on smoothed probabilities.
         """
-        if not self.prep_df:
+        if self.prep_df.empty:
             raise ValueError("Data not prepared yet. Call prepare() first.")
         if not self.best_model_results:
             raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
 
         logger.info("Computing MEF from best models...")
 
+        # Loop vars
         iterator = len(self.prep_df) - self.window_length + 1
-        
+
         for i in range(iterator):
             msdr_results = self.best_model_results[i]
-            
-            # Timestamp for the result is the END of the window
-            timestamp = self.prep_df.index[i + self.window_length - 1]
+            timestamp = self.prep_df.index[i + self.window_length - 1] # Timestamp for the result is the END of the window
 
             if msdr_results is not None:
-                params = msdr_results.params
-                
+                # For each timestamp, save .summary() coefficients in list
+                df_coeffs = pd.concat(
+                    [
+                        msdr_results.params,    # coef
+                        msdr_results.bse,       # std_err
+                        msdr_results.tvalues,   # z
+                        msdr_results.pvalues,   # P>|z|
+                        msdr_results.conf_int() # Conf_int [0.025, 0.975]
+                    ],
+                    axis=1
+                )
+                df_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
+
+                row_summary = {
+                    'timestamp': timestamp,
+                    'mle_converged': msdr_results.mle_retvals['converged'],
+                    'coeffs': df_coeffs,
+                    'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1],
+                    'aic': msdr_results.aic,
+                    'bic': msdr_results.bic,
+                    'hqic': msdr_results.hqic,
+                    'llf': msdr_results.llf
+                }
+                self.summary.append(row_summary)
+
+                # For extracting coeffs and iterating
+                params = row_summary['coeffs'].coef
+                smoothed_probs = row_summary['smoothed_probs']
+
                 # 1. Find Intercepts
                 intercepts = {}
                 for r in range(3): # Check for up to 3 regimes
@@ -208,8 +230,7 @@ class MSDRAnalyzer:
                 
                 # Fallback if no switching intercept (global const)
                 if not intercepts and 'const' in params:
-                    probs = msdr_results.smoothed_marginal_probabilities.iloc[-1]
-                    for r in range(len(probs)):
+                    for r in range(len(smoothed_probs)):
                         intercepts[r] = params['const']
                 
                 # 2. Find Generation Coefficients (MEFs)
@@ -238,40 +259,55 @@ class MSDRAnalyzer:
                 ]
                 
                 # 3. Calculate Weighted Averages (Combined MEF and Intercept)
-                probs = msdr_results.smoothed_marginal_probabilities.iloc[-1]
-                
                 combined_gen_coeff = 0
                 combined_intercept = 0
                 
                 # Iterate over the actual number of regimes found (length of probs)
-                for r in range(len(probs)):
-                    prob = probs[r]
+                for r in range(len(smoothed_probs)):
+                    prob = smoothed_probs[r]
                     combined_gen_coeff += prob * gen_coeffs.get(r, 0)
                     combined_intercept += prob * intercepts.get(r, 0)
                 
                 # Store the combined coefficients
-                self.df_mef_scaled.loc[timestamp] = [combined_intercept, combined_gen_coeff]
+                self.df_mef_scaled.loc[timestamp] = {
+                    'intercept_scaled': combined_intercept,
+                    'mef_scaled': combined_gen_coeff
+                }
+
             else:
                 # Handle missing results
-                self.df_mef_scaled.loc[timestamp] = [np.nan, np.nan]
+                logger.warn(f"No results for timestamp {timestamp}. Writing NaN.")
+                self.df_mef_scaled.loc[timestamp] = {
+                    'intercept_scaled': np.nan,
+                    'mef_scaled': np.nan
+                }
 
         # Save to file
-        self._save_df_to_file(data=self.best_model_coefficients, filename='df_best_coefficients.csv')
-        self._save_df_to_file(data=self.df_mef_scaled, filename='df_mef_scaled.csv')
-        self._save_best_model_results_to_file()
+        self._save_to_file(data=self.best_model_coefficients, sub_dir='tables', filename='df_best_coefficients.csv')
+        self._save_to_file(data=self.df_mef_scaled, sub_dir='tables', filename='df_mef_scaled.csv')
+        self._save_to_file(data=self.summary, sub_dir='summary', filename='summary.pkl')
+        self._inverse_transform_mef()
 
-    def load(self, filename):
+    def merge_mef(self):
         """
-        Loads a saved MSDRAnalysis instance.
-        :param filename: File of the model that shall be loaded. Only input the filename string.
-        :return: MSDRAnalysis instance
+        Merges the calculated absolute MEF back to the original input data.
+        Returns a DataFrame with the original 'total_generation', 'total_emissions' and the new 'MEF'.
+        :return merged_df:
         """
-        try:
-            filepath = f"{self.root}/results/models/{filename}"
-            return joblib.load(filepath)
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            return None
+        if self.prep_df.empty:
+            raise ValueError("Data not prepared yet. Call prepare() first.")
+        if self.df_mef_scaled.empty:
+            raise ValueError("MEF not computed yet. Call compute() first.")
+
+        logger.info("Merging MEF back to original data...")
+
+        merged_df = self.df.join(
+            self.df_mef_absolute[['mef_t_MWh', 'mef_g_kWh', 'intercept']],
+            how='left'
+        )
+
+        self._save_to_file(data=merged_df, sub_dir='tables', filename='df_mef_final.csv')
+        return merged_df
 
     # ____________________ Private functions ____________________#
     # ---------- Model fitting ----------#
@@ -378,48 +414,65 @@ class MSDRAnalyzer:
             plt.close() # Ensure the figure is closed even on error
 
     # ---------- File handling ----------#
-    def _save_best_model_results_to_file(self, filename=None):
-        """
-        Saves the current analyzer instance to a file using joblib.
-        :param filename: Optional filename. If None, saves to results/models/{tso}_analyzer_models.pkl
-        """
-        if filename is None:
-            save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / "models"
-            os.makedirs(save_dir, exist_ok=True)
-            filename = save_dir / f"{self.tso}_run_{self.run}_analyzer_models.pkl"
-
-        try:
-            joblib.dump(self, filename)
-            logger.info(f"Model saved to {filename}")
-
-        except Exception as e:
-            logger.error(f"Failed to save model results: {e}")
-
-    def _save_df_to_file(self, data, filename):
+    def _save_to_file(self, data, sub_dir, filename):
         """
         Saves a dataframe to a file.
         :param data: Dataframe to save
+        :param sub_dir: Subdirectory of results folder
         :param filename: Filename
         """
-        save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / "tables"
+        save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / sub_dir
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
 
         try:
-            data.to_csv(filepath, index=True)
+            if str(filename).endswith('.csv'):
+                data.to_csv(filepath)
+            elif str(filename).endswith('.pkl'):
+                joblib.dump(data, filepath)
+
             logger.info(f"Dataframe saved to {filepath}")
         except Exception as e:
             logger.error(f"Failed to save model: {e}")
 
     # ---------- Preprocessing ----------#
-    def _inverse_transform(self, df):
-        # TODO: Add function based on sd_emi and sd_gen
+    def _inverse_transform_mef(self):
         """
         Function to transform scaled data back to the original scale for evaluation.
-        :param df:
-        :return:
         """
-        pass
+        logger.info("Inverse transforming coefficients to get absolute MEF")
+
+        col_slope_scaled = self.df_mef_scaled['mef_scaled']
+        col_intercept_scaled = self.df_mef_scaled['intercept_scaled']
+
+        # Get transforming factors (sd & mean) from the scaler instance
+        # [0] = Generation (X), [1] = Emissions (Y)
+        std_gen = self.scaler.scale_[0]
+        mw_gen = self.scaler.mean_[0]
+        std_emi = self.scaler.scale_[1]
+        mw_emi = self.scaler.mean_[1]
+        slope_factor = std_emi / std_gen    # is slope coefficient, thus: beta_orig = beta_scaled * (std_emi / std_gen)
+
+        # Compute columns values
+        mef_t_mwh = col_slope_scaled * slope_factor
+        mef_g_kwh = mef_t_mwh * 1000
+        intercept_abs = (
+                col_intercept_scaled * std_emi
+                + mw_emi
+                - (mef_t_mwh * mw_gen)
+        )
+
+        # Save columns in df
+        self.df_mef_absolute = pd.DataFrame(
+            {
+                'mef_t_MWh': mef_t_mwh,
+                'mef_g_kWh': mef_g_kwh,
+                'intercept': intercept_abs
+            },
+            index=self.df_mef_scaled.index
+        )
+
+        self._save_to_file(data=self.df_mef_absolute, sub_dir='tables', filename='df_mef_absolute.csv')
 
     @staticmethod
     def _set_types(df):
@@ -484,3 +537,5 @@ class MSDRAnalyzer:
         print(f"  - Negative Emissions Values: {(df['total_emissions'] < 0).sum()}")
         print(f"  - Rows with NaN Values: {(df.isnull().sum()).sum()}")
         print("")
+
+    # TODO: Implement Merge function for self.df_mef (inv_transformed) to original data
