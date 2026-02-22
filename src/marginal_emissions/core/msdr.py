@@ -119,7 +119,7 @@ class MSDRAnalyzer:
             # Final inspection
             self._inspect_data(delta_df)
 
-            # Save to instance
+            # Set state
             self.prep_df = delta_df
 
         except Exception as e:
@@ -128,7 +128,6 @@ class MSDRAnalyzer:
         return self.prep_df
 
     def fit(self):
-        # TODO: Implement analysis of models (computing key metrics for model evaluation)
         """
         Fits a msdr model for each timestamp in the time series.
         """
@@ -210,6 +209,7 @@ class MSDRAnalyzer:
 
                 indicator_row = {
                     'timestamp': timestamp,
+                    'coeffs': df_summary_coeffs,
                     'k_regimes': msdr_results._results.k_regimes,
                     'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1],
                     'mae': mae,
