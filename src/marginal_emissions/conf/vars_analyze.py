@@ -9,10 +9,10 @@ data_dir = root / "data" / "processed"
 
 # Data dictionary for executing everything in the cli
 ANALYSIS_DFS = {
-    '50Hertz': pd.read_csv(f'{data_dir}/analysis_final_f_hertz_15min_utc_202212312300_202412312245'),
-    'Amprion': pd.read_csv(f'{data_dir}/analysis_final_amprion_15min_utc_202212312300_202412312245'),
-    'TenneT': pd.read_csv(f'{data_dir}/analysis_final_tennet_15min_utc_202212312300_202412312245'),
-    'TransnetBW': pd.read_csv(f'{data_dir}/analysis_final_transnet_bw_15min_utc_202212312300_202412312245'),
+    '50Hertz': pd.read_csv(f'{data_dir}/analysis_final_f_hertz_15min_utc_202212232300_202412312245.csv'),
+    'Amprion': pd.read_csv(f'{data_dir}/analysis_final_amprion_15min_utc_202212232300_202412312245.csv'),
+    'TenneT': pd.read_csv(f'{data_dir}/analysis_final_tennet_15min_utc_202212232300_202412312245.csv'),
+    'TransnetBW': pd.read_csv(f'{data_dir}/analysis_final_transnet_bw_15min_utc_202212232300_202412312245.csv'),
 }
 
 # Datasets for the single execution in cli
