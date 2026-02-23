@@ -8,7 +8,7 @@ from typing import Optional, Dict
 import pandas as pd
 import json
 import requests
-from marginal_emissions.conf.vars import SMARD_BASE_URL, SMARD_FILTER, SMARD_REGION
+from marginal_emissions.conf.vars_fetch import SMARD_BASE_URL, SMARD_FILTER, SMARD_REGION
 
 class SmardClient:
     def __init__(self):
@@ -20,8 +20,8 @@ class SmardClient:
     def get_actual_generation(self):
         """
         This function retrieves the requested data from the SMARD API.
-        :param area: Area as specified in /marginal_emissions/conf/vars.py
-        :param prod_type: Production Type as specified in /marginal_emissions/conf/vars.py
+        :param area: Area as specified in /marginal_emissions/conf/vars_fetch.py
+        :param prod_type: Production Type as specified in /marginal_emissions/conf/vars_fetch.py
         :return:
         """
         pass

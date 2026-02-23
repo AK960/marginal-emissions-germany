@@ -3,7 +3,7 @@ CLI command for listing available APIs.
 """
 
 import click
-from marginal_emissions.conf.vars import AVAILABLE_APIS
+from marginal_emissions.conf.vars_fetch import AVAILABLE_APIS
 
 @click.command(name='listapis')
 def listapis_group():

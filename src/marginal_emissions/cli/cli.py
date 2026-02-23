@@ -5,6 +5,7 @@ from .commands.inspect import inspect_group
 from .commands.listapis import listapis_group
 from .commands.fetch import *
 from .commands.prep import prep_group
+from .commands.analyze import analysis_group
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -24,7 +25,7 @@ cli.add_command(fetch_group, name='fetch')
 cli.add_command(listapis_group, name='listapis')
 cli.add_command(synchtex_group, name='synchtex')
 cli.add_command(prep_group, name='prep')
-#cli.add_command(analyse_group, name='run') # TODO: Implement run_group to process data and print report
+cli.add_command(analysis_group, name='analysis') # TODO: Implement run_group to process data and print report
 
 if __name__ == "__main__":
     cli()

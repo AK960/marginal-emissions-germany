@@ -4,12 +4,14 @@ Class for performing the MSDR analysis
 
 import os
 import warnings
+from pathlib import Path
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytz
+import json
 import statsmodels.api as sm
 from joblib import Parallel, delayed
 from pyprojroot import here
@@ -71,7 +73,6 @@ class MSDRAnalyzer:
         self.estimated_emi = None       # DataFrame with estimated emissions from predict(), used to plot true vs. estimated emissions
         self.best_model_results = []    # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
         self.best_maes = []             # Stores best maes from chosen best model in fit()
-        self.df_summary_coeffs = None   # Contains values from summary() in machine readable form (not as text)
         self.df_mef_scaled = pd.DataFrame(columns=['intercept_scaled', 'mef_scaled']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
         self.df_mef_absolute = None
 
@@ -209,20 +210,20 @@ class MSDRAnalyzer:
 
                 indicator_row = {
                     'timestamp': timestamp,
-                    'coeffs': df_summary_coeffs,
-                    'k_regimes': msdr_results._results.k_regimes,
-                    'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1],
-                    'mae': mae,
-                    'aic': msdr_results.aic,    # aic = 2k - 2 ln(L) // k = no. model params, L = max Log Likelihood function (no params vs. model fit)
-                    'bic': msdr_results.bic,
-                    'hqic': msdr_results.hqic,
-                    'llf': msdr_results.llf,
-                    'mle_converged': msdr_results.mle_retvals['converged']
+                    'coeffs': df_summary_coeffs.to_dict(orient='index'),
+                    'k_regimes': int(msdr_results._results.k_regimes),
+                    'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1].to_dict(),
+                    'mae': float(mae),
+                    'aic': float(msdr_results.aic),    # aic = 2k - 2 ln(L) // k = no. model params, L = max Log Likelihood function (no params vs. model fit)
+                    'bic': float(msdr_results.bic),
+                    'hqic': float(msdr_results.hqic),
+                    'llf': float(msdr_results.llf),
+                    'mle_converged': bool(msdr_results.mle_retvals['converged'])
                 }
                 self.indicators.append(indicator_row)
 
                 # For extracting coeffs and iterating
-                params = indicator_row['coeffs'].coef
+                params = msdr_results.params.to_dict()
                 smoothed_probs = indicator_row['smoothed_probs']
 
                 # 1. Find Intercepts
@@ -277,9 +278,8 @@ class MSDRAnalyzer:
                 }
 
         # Save to file
-        self._save_to_file(data=self.df_summary_coeffs, sub_dir='tables', filename='df_summary_coefficients.csv')
         self._save_to_file(data=self.df_mef_scaled, sub_dir='tables', filename='df_mef_scaled.csv')
-        self._save_to_file(data=self.indicators, sub_dir='summary', filename='indicators.pkl')
+        self._save_to_file(data=self.indicators, sub_dir='summary', filename='indicators.json')
         self._inverse_transform_mef()
 
     def merge_mef(self):
@@ -295,10 +295,12 @@ class MSDRAnalyzer:
 
         logger.info("Merging MEF back to original data...")
 
+        # Merge back to original data & remove training data (does not have MEF value)
         merged_df = self.df.join(
             self.df_mef_absolute[['mef_t_MWh', 'mef_g_kWh', 'intercept']],
             how='left'
         )
+        merged_df.dropna(subset=['mef_t_MWh'], inplace=True)
 
         self._save_to_file(data=merged_df, sub_dir='tables', filename='df_mef_final.csv')
         return merged_df
@@ -464,19 +466,39 @@ class MSDRAnalyzer:
         :param sub_dir: Subdirectory of results folder
         :param filename: Filename
         """
+        ext = Path(filename).suffix.lower().lstrip('.')
         save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / sub_dir
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
 
-        try:
-            if str(filename).endswith('.csv'):
-                data.to_csv(filepath)
-            elif str(filename).endswith('.pkl'):
-                joblib.dump(data, filepath)
+        match ext:
+            case "csv":
+                try:
+                    if str(filename).endswith('.csv'):
+                        data.to_csv(filepath)
+                    elif str(filename).endswith('.pkl'):
+                        joblib.dump(data, filepath)
 
-            logger.info(f"Dataframe saved to {filepath}")
-        except Exception as e:
-            logger.error(f"Failed to save model: {e}")
+                    logger.info(f"Dataframe saved to {filepath}")
+                except Exception as e:
+                    logger.error(f"Failed to save to csv: {e}")
+            case "json":
+                try:
+                    with open(filepath, 'w', encoding='utf-8') as file:
+                        json.dump(data, file, default=self._json_converter, ensure_ascii=False, indent=4)
+                        logger.info(f"Dataframe saved to {filepath}")
+                except Exception as e:
+                    logger.error(f"Failed to save model to json: {e}")
+
+    @staticmethod
+    def _json_converter(obj):
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32, np.int64)):
+            return int(obj)
+        if isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+        raise TypeError(f"Type {type(obj)} is not JSON serializable")
 
     # ---------- Preprocessing ----------#
     def _inverse_transform_mef(self):

@@ -35,4 +35,7 @@ dependencies:
   - zlib=1.2.13=h5eee18b_1
   - pip:
       - marginal-emissions==0.1
+      - pandas>=2.0.0
+      - click>=8.3.1
+      - chardet
 prefix: /home/aklei/miniconda3/envs/ma
