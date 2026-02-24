@@ -71,7 +71,7 @@ class MSDRAnalyzer:
         self.indicators = []            # Contains indicators of the best model for evaluation --> not flat thus list not df
         self.prep_df = None             # Shifted and z-transformed original df
         self.estimated_emi = None       # DataFrame with estimated emissions from predict(), used to plot true vs. estimated emissions
-        self.best_model_results = []    # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
+        self.best_model_results = []    # Will store lightweight dicts (not full model objects) for each best model per timestamp, to avoid OOM
         self.best_maes = []             # Stores best maes from chosen best model in fit()
         self.df_mef_scaled = pd.DataFrame(columns=['intercept_scaled', 'mef_scaled']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
         self.df_mef_absolute = None
@@ -158,18 +158,16 @@ class MSDRAnalyzer:
         self.estimated_emi = self.prep_df[['total_emissions']].copy()
         self.estimated_emi['estimated_emissions'] = np.nan
 
-        # Iterate through results and predict the next step
+        # Iterate through results and use pre-computed predictions from lightweight dicts
         for i in range(len(self.prep_df) - self.window_length + 1):
-            reg_win = self.prep_df.iloc[i: i + self.window_length]
-            msdr_results = self.best_model_results[i]
+            result_dict = self.best_model_results[i]
 
-            if msdr_results is not None:
-                # Predict for the last point in the window (or next step if forecasting)
-                # Based on notebook logic: predict(start=end, end=end)
-                forecast = msdr_results.predict(start=reg_win.index[-1], end=reg_win.index[-1])
-                self.estimated_emi.loc[reg_win.index[-1], 'estimated_emissions'] = forecast.iloc[0]
+            if result_dict is not None:
+                idx = result_dict['predicted_index']
+                self.estimated_emi.loc[idx, 'estimated_emissions'] = result_dict['predicted_value']
             else:
-                print(f'No results for window ending on {reg_win.index[-1]}')
+                timestamp = self.prep_df.index[i + self.window_length - 1]
+                print(f'No results for window ending on {timestamp}')
 
         logger.info("Plotting estimated emissions...")
         self._save_to_file(data=self.estimated_emi, sub_dir='tables', filename='df_estimated_emissions.csv')
@@ -190,41 +188,28 @@ class MSDRAnalyzer:
         iterator = len(self.prep_df) - self.window_length + 1
 
         for i in range(iterator):
-            msdr_results = self.best_model_results[i]
+            result_dict = self.best_model_results[i]
             mae = self.best_maes[i]
             timestamp = self.prep_df.index[i + self.window_length - 1] # Timestamp for the result is the END of the window
 
-            if msdr_results is not None:
-                # For each timestamp, save .summary() coefficients in list
-                df_summary_coeffs = pd.concat(
-                    [
-                        msdr_results.params,    # coef
-                        msdr_results.bse,       # std_err
-                        msdr_results.tvalues,   # z
-                        msdr_results.pvalues,   # P>|z|
-                        msdr_results.conf_int() # Conf_int [0.025, 0.975]
-                    ],
-                    axis=1
-                )
-                df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
-
+            if result_dict is not None:
                 indicator_row = {
                     'timestamp': timestamp,
-                    'coeffs': df_summary_coeffs.to_dict(orient='index'),
-                    'k_regimes': int(msdr_results._results.k_regimes),
-                    'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1].to_dict(),
+                    'coeffs': result_dict['coeffs_summary'],
+                    'k_regimes': result_dict['k_regimes'],
+                    'smoothed_probs': result_dict['smoothed_probs_last'],
                     'mae': float(mae),
-                    'aic': float(msdr_results.aic),    # aic = 2k - 2 ln(L) // k = no. model params, L = max Log Likelihood function (no params vs. model fit)
-                    'bic': float(msdr_results.bic),
-                    'hqic': float(msdr_results.hqic),
-                    'llf': float(msdr_results.llf),
-                    'mle_converged': bool(msdr_results.mle_retvals['converged'])
+                    'aic': result_dict['aic'],
+                    'bic': result_dict['bic'],
+                    'hqic': result_dict['hqic'],
+                    'llf': result_dict['llf'],
+                    'mle_converged': result_dict['mle_converged']
                 }
                 self.indicators.append(indicator_row)
 
                 # For extracting coeffs and iterating
-                params = msdr_results.params.to_dict()
-                smoothed_probs = indicator_row['smoothed_probs']
+                params = result_dict['params']
+                smoothed_probs = result_dict['smoothed_probs_last']
 
                 # 1. Find Intercepts
                 intercepts = {}
@@ -379,7 +364,53 @@ class MSDRAnalyzer:
                     best_mae = mae
                     best_aic = aic
 
-        return best_model, best_mae
+        # Extract lightweight result dict to avoid storing full model objects in memory (OOM prevention)
+        if best_model is not None:
+            lightweight_result = self._extract_lightweight_result(best_model, current_window, best_mae)
+            return lightweight_result, best_mae
+        return None, best_mae
+
+    @staticmethod
+    def _extract_lightweight_result(msdr_result, window_data, mae):
+        """
+        Extracts only the necessary data from a full MarkovRegression result object
+        into a lightweight dictionary. This prevents OOM by discarding the heavy
+        statsmodels objects (which contain full copies of window data, covariance
+        matrices, Hessians, etc.).
+        :param msdr_result: Fitted MarkovRegressionResultsWrapper
+        :param window_data: DataFrame of the current window
+        :param mae: Pre-computed MAE for this model
+        :returns: Lightweight dict with all data needed by predict() and compute()
+        """
+        # Prediction for last point in window (used by predict())
+        forecast = msdr_result.predict(start=window_data.index[-1], end=window_data.index[-1])
+
+        # Build summary coefficients table (used by compute() for indicators)
+        df_summary_coeffs = pd.concat(
+            [
+                msdr_result.params,
+                msdr_result.bse,
+                msdr_result.tvalues,
+                msdr_result.pvalues,
+                msdr_result.conf_int()
+            ],
+            axis=1
+        )
+        df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
+
+        return {
+            'params': msdr_result.params.to_dict(),
+            'coeffs_summary': df_summary_coeffs.to_dict(orient='index'),
+            'k_regimes': int(msdr_result._results.k_regimes),
+            'smoothed_probs_last': msdr_result.smoothed_marginal_probabilities.iloc[-1].to_dict(),
+            'aic': float(msdr_result.aic),
+            'bic': float(msdr_result.bic),
+            'hqic': float(msdr_result.hqic),
+            'llf': float(msdr_result.llf),
+            'mle_converged': bool(msdr_result.mle_retvals['converged']),
+            'predicted_value': float(forecast.iloc[0]),
+            'predicted_index': window_data.index[-1],
+        }
 
     @staticmethod
     def _fit_markov_model(window_data, params):

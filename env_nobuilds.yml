@@ -265,4 +265,3 @@ dependencies:
       - types-pytz==2025.2.0.20251108
       - watchdog==6.0.0
       - zope-interface==8.1.1
-prefix: /home/aklei/miniconda3/envs/ma
