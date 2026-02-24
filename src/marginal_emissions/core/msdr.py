@@ -83,17 +83,12 @@ class MSDRAnalyzer:
         """
         Prepares input data for later analysis.
         """
-        logger.info("Starting data preparation...")
+        logger.info("Preparing data...")
         try:
             # Check input data
-            logger.info("I. DATA INSPECTION")
             df = self._set_types(self.df)
 
-            self._inspect_data(df)
-
-            logger.info("II. DATA PREPARATION")
             # Calculating the delta between two consecutive rows to eliminate trends
-            logger.info("1) Calculation delta for time series:")
             delta_df = df - df.shift(1)
             delta_df = delta_df[1:]  # Dropping the first row will be NaN
 
@@ -108,18 +103,12 @@ class MSDRAnalyzer:
                 # If NaNs remain (e.g., at start), drop them
                 delta_df = delta_df.dropna()
 
-            print(delta_df.head())
-
             # Scaling data to have zero mean and unit variance (z-transformation)
-            print("")
-            print(f"  2) Scaling data to have zero mean and unit variance:")
             delta_df[['total_generation', 'total_emissions']] = self.scaler.fit_transform(
                 delta_df[['total_generation', 'total_emissions']]
             )
 
-            print(delta_df.head())
-
-            # Final inspection
+            # Print inspection
             self._inspect_data(delta_df)
 
             # Set state
@@ -134,18 +123,16 @@ class MSDRAnalyzer:
         """
         Fits a msdr model for each timestamp in the time series.
         """
-        logger.info(f"Starting MSDR analysis for {self.tso} on {len(self.prep_df) - self.window_length + 1} rows...")
+        logger.info(f"Fitting model for {len(self.prep_df) - self.window_length + 1} observations...")
         try:
             # Parallel execution with a progress bar
             results = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._process_window)(i, self.prep_df)
-                for i in tqdm(range(len(self.prep_df) - self.window_length + 1), desc=f"Analyzing {self.tso}...")
+                for i in tqdm(range(len(self.prep_df) - self.window_length + 1), desc=f"Analyzing {self.tso}")
             )
             self.best_model_results, self.best_maes = zip(*results)
         except Exception as e:
-            logger.error(f'Failed to run analysis. Exit with error: {e}')
-
-        logger.info(f"Analysis for {self.tso} complete.\n")
+            logger.error(f"Failed to run analysis. Exit with error: {e}")
 
     def predict(self):
         """
@@ -171,7 +158,7 @@ class MSDRAnalyzer:
                 forecast = msdr_results.predict(start=reg_win.index[-1], end=reg_win.index[-1])
                 self.estimated_emi.loc[reg_win.index[-1], 'estimated_emissions'] = forecast.iloc[0]
             else:
-                print(f'No results for window ending on {reg_win.index[-1]}')
+                logger.warning(f'No results for window ending on {reg_win.index[-1]}')
 
         logger.info("Plotting estimated emissions...")
         self._save_to_file(data=self.estimated_emi, sub_dir='tables', filename='df_estimated_emissions.csv')
@@ -186,7 +173,7 @@ class MSDRAnalyzer:
         if not self.best_model_results:
             raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
 
-        logger.info("Computing MEF from best models...")
+        logger.info("Computing MEF...")
 
         # Loop vars
         iterator = len(self.prep_df) - self.window_length + 1
@@ -478,14 +465,14 @@ class MSDRAnalyzer:
                         data.to_csv(filepath)
                     logger.info(f"Dataframe saved to {filepath}")
                 except Exception as e:
-                    logger.error(f"Failed to save to csv: {e}")
+                    logger.error(f"Failed to save dataframe to csv: {e}")
             case "json":
                 try:
                     with open(filepath, 'w', encoding='utf-8') as file:
                         json.dump(data, file, default=self._json_converter, ensure_ascii=False, indent=4)
-                        logger.info(f"Dataframe saved to {filepath}")
+                        logger.info(f"Summary data saved to {filepath}")
                 except Exception as e:
-                    logger.error(f"Failed to save model to json: {e}")
+                    logger.error(f"Failed to save summary data to json: {e}")
 
     @staticmethod
     def _json_converter(obj):
@@ -502,7 +489,7 @@ class MSDRAnalyzer:
         """
         Function to transform scaled data back to the original scale for evaluation.
         """
-        logger.info("Inverse transforming coefficients to get absolute MEF")
+        logger.info("Inverse transforming coefficients to get absolute MEF...")
 
         col_slope_scaled = self.df_mef_scaled['mef_scaled']
         col_intercept_scaled = self.df_mef_scaled['intercept_scaled']
@@ -589,7 +576,6 @@ class MSDRAnalyzer:
         :param df:
         :return: None
         """
-        print("")
         print("[INSPECTION]")
         print(f"  - Index Type: {df.index.dtype}")
         print(f"  - Duplicate Entries: {(df.index.duplicated()).sum()}")
@@ -598,4 +584,3 @@ class MSDRAnalyzer:
         print(f"  - Total Emissions Type: {df.total_emissions.dtype}")
         print(f"  - Negative Emissions Values: {(df['total_emissions'] < 0).sum()}")
         print(f"  - Rows with NaN Values: {(df.isnull().sum()).sum()}")
-        print("")

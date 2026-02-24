@@ -36,11 +36,9 @@ def analysis_group():
 )
 def set_data(operator, is_test):
     if is_test:
-        print("\n[TEST MODE] Performing test run...")
-        # 'test' als tso übergeben, damit der Ordner später "test_run_..." heißt
+        logger.info("PERFORMING TEST RUN")
         _run_analysis(operator='test', data=TEST_DF, is_test=True)
     elif operator:
-        print(f"\nStarting analysis for {operator}")
         tso = operator.lower()
 
         # Select data to run analysis on based on the dataframe input param
@@ -55,7 +53,6 @@ def set_data(operator, is_test):
                 _run_analysis(operator=tso, data=TRANSNET_BW)
             case 'all':
                 for area, df in ANALYSIS_DFS.items():
-                    print(f"\n--- Running analysis for {area.upper()} ---")
                     _run_analysis(operator=area, data=df)
             case _:
                 print(f"InputError: Unknown argument '{tso}'. Run '--help' for more information.")
@@ -64,26 +61,32 @@ def set_data(operator, is_test):
         logger.error("Must provide either -t or -tso flag.")
 
 def _run_analysis(operator, data, is_test=False):
-    print("Performing analysis...")
-
     # Check last run for class initialization
     if not is_test:
         new_run = _check_last_run(name=operator) + 1
+        for year, df in data.items():
+            # Run analysis
+            try:
+                logger.info(f"Starting analysis for {operator} in {year}")
+                analyzer = MSDRAnalyzer(tso=operator, data=df, run=new_run, year=year)
+                analyzer.prepare()
+                analyzer.fit()
+                analyzer.predict()
+                analyzer.compute()
+                analyzer.merge_mef()
+                logger.info(f"Finished analysis for {operator} in {year}")
+            except Exception as e:
+                logger.error(f"Analysis failed with error: {e}")
+
     else:
         new_run = 0
-
-    for year, df in data.items():
-        # Run analysis
-        try:
-            logger.info(f"Running analysis for {operator} in {year}...")
-            analyzer = MSDRAnalyzer(tso=operator, data=df, run=new_run, year=year)
-            analyzer.prepare()
-            analyzer.fit()
-            analyzer.predict()
-            analyzer.compute()
-            analyzer.merge_mef()
-        except Exception as e:
-            logger.log(f"Analysis failed with error: {e}")
+        analyzer = MSDRAnalyzer(tso=operator, data=data, run=new_run, year=0)
+        analyzer.prepare()
+        analyzer.fit()
+        analyzer.predict()
+        analyzer.compute()
+        analyzer.merge_mef()
+        logger.info(f"Finished test run!")
 
 def _check_last_run(name) -> int:
     # Check out dir
