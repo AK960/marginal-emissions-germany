@@ -75,6 +75,7 @@ def _run_analysis(operator, data, is_test=False):
     for year, df in data.items():
         # Run analysis
         try:
+            logger.info(f"Running analysis for {operator} in {year}...")
             analyzer = MSDRAnalyzer(tso=operator, data=df, run=new_run, year=year)
             analyzer.prepare()
             analyzer.fit()
