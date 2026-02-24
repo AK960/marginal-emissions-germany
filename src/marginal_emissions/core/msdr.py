@@ -34,6 +34,7 @@ class MSDRAnalyzer:
     def __init__(
         self,
         tso,
+        year,
         data,
         window_length=672, # 1 week = 7*24*4
         param_grid=None,
@@ -50,6 +51,7 @@ class MSDRAnalyzer:
         # Base
         self.root = here()
         self.tso = tso
+        self.year = year
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
@@ -335,8 +337,6 @@ class MSDRAnalyzer:
             # Check if the model converged
             is_converged = result.mle_retvals['converged']
 
-            # TODO: Refine selection logic with aic (for model performance and mle convergence): which one to choose?
-
             ## mae model selection
             """
             # Case 1: No best model yet
@@ -467,7 +467,7 @@ class MSDRAnalyzer:
         :param filename: Filename
         """
         ext = Path(filename).suffix.lower().lstrip('.')
-        save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / sub_dir
+        save_dir = self.root / "results" / f"{self.tso}_run_{self.run}_{self.year}" / sub_dir
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
 
@@ -476,9 +476,6 @@ class MSDRAnalyzer:
                 try:
                     if str(filename).endswith('.csv'):
                         data.to_csv(filepath)
-                    elif str(filename).endswith('.pkl'):
-                        joblib.dump(data, filepath)
-
                     logger.info(f"Dataframe saved to {filepath}")
                 except Exception as e:
                     logger.error(f"Failed to save to csv: {e}")
