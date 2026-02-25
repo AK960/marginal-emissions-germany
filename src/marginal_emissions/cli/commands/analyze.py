@@ -10,7 +10,6 @@ from marginal_emissions import logger
 from marginal_emissions.conf.vars_analyze import *
 from marginal_emissions.core.msdr import MSDRAnalyzer
 
-
 @click.group(name='analysis')
 def analysis_group():
     """
@@ -34,7 +33,10 @@ def analysis_group():
     is_flag=True,
     help='If set, analysis will be performed on shorter test dataset.'
 )
-def set_data(operator, is_test):
+def set_data(
+        operator,
+        is_test
+):
     if is_test:
         logger.info("PERFORMING TEST RUN")
         _run_analysis(operator='test', data=TEST_DF, is_test=True)

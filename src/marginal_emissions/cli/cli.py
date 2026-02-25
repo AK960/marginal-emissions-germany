@@ -1,5 +1,6 @@
 import click
 
+from marginal_emissions.cli.commands.validate import validation_group
 from .commands.synchlatex import synchtex_group
 from .commands.inspect import inspect_group
 from .commands.listapis import listapis_group
@@ -23,9 +24,10 @@ def cli(ctx, verbose):
 cli.add_command(inspect_group, name='inspect')
 cli.add_command(fetch_group, name='fetch')
 cli.add_command(listapis_group, name='listapis')
-cli.add_command(synchtex_group, name='synchtex')
+# cli.add_command(synchtex_group, name='synchtex')
 cli.add_command(prep_group, name='prep')
-cli.add_command(analysis_group, name='analysis') # TODO: Implement run_group to process data and print report
+cli.add_command(analysis_group, name='analysis')
+cli.add_command(validation_group, name='validation')
 
 if __name__ == "__main__":
     cli()

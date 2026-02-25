@@ -1,5 +1,5 @@
 """
-Class for performing the MSDR analysis
+Class for performing the MSDR analysis.
 """
 
 import os
@@ -434,7 +434,7 @@ class MSDRAnalyzer:
         
         # Save plot
         try:
-            save_dir = self.root / "results" / f"{self.tso}_run_{self.run}" / "figures"
+            save_dir = self.root / "results" / f"{self.tso}_run_{self.run}_{self.year}" / "figures"
             os.makedirs(save_dir, exist_ok=True)
             
             filename = save_dir / f"{self.tso}_run_{self.run}_msdr_prediction.png"
