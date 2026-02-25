@@ -1,7 +1,13 @@
 """
 Helper functions for the CLI commands
 """
+import os
 from typing import List
+
+import numpy as np
+from matplotlib import pyplot as plt
+from pyprojroot import here
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 from . import logger
 import chardet
@@ -78,6 +84,50 @@ def get_all_subdirs(base_path: str = "./data") -> List[Path]:
     subdirs = sorted([p for p in path.rglob('*') if p.is_dir()])
     return subdirs
 
+def plot_estimated_emissions(data, tso, year, run):
+    """
+    Plots the estimated vs. original emissions and calculates performance metrics.
+    Saves the plot as a PNG file.
+    """
+    # Filter data to remove NaNs (e.g., the first window)
+    df_plot = data.dropna(subset=['estimated_emissions', 'total_emissions'])
+
+    if df_plot.empty:
+        print("Warning: No valid data points for plotting (maybe window length > data length?)")
+        return
+
+    # Calculate metrics
+    r2 = r2_score(df_plot['total_emissions'], df_plot['estimated_emissions'])
+    mae = mean_absolute_error(df_plot['total_emissions'], df_plot['estimated_emissions'])
+    mse = mean_squared_error(df_plot['total_emissions'], df_plot['estimated_emissions'])
+    rmse = np.sqrt(mse)
+
+    # Create Plot
+    plt.style.use('default')
+    plt.figure(figsize=(12, 6))
+    plt.plot(df_plot.index, df_plot['total_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
+    plt.plot(df_plot.index, df_plot['estimated_emissions'], label='Model Estimation (Scaled)', alpha=0.7,
+             linestyle='--')
+
+    plt.title(
+        f"MSDR Model Validation - {tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f}")
+    plt.ylabel("Scaled Emissions")
+    plt.xlabel("Time")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    # Save plot
+    try:
+        save_dir = here() / "results" / f"{tso}_run_{run}_{year}" / "figures"
+        os.makedirs(save_dir, exist_ok=True)
+
+        filename = save_dir / f"{tso}_{year}_prediction.png"
+        plt.savefig(filename)
+        plt.close()  # Close figure to free memory
+        logger.info(f"Estimated plot saved to {filename}")
+    except Exception as e:
+        logger.error(f"Failed to save image to file: {e}. Continuing...")
+plt.close()  # Ensure the figure is closed even on error
 
 def say_hello(self):
     print("Hello from marginal_emissions!")
