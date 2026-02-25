@@ -29,12 +29,23 @@ def analysis_group():
     help='Select TSO for whose area to run analysis (not case sensitive).'
 )
 @click.option(
+    '--year', '-y',
+    type=click.Choice([
+        '2023', '2024', 'all'
+    ],
+    case_sensitive=False
+    ),
+    required=False,
+    help='Select TSO for whose area to run analysis (not case sensitive).'
+)
+@click.option(
     '--is-test', '-t',
     is_flag=True,
     help='If set, analysis will be performed on shorter test dataset.'
 )
 def set_data(
         operator,
+        year,
         is_test
 ):
     if is_test:
@@ -42,20 +53,37 @@ def set_data(
         _run_analysis(operator='test', data=TEST_DF, is_test=True)
     elif operator:
         tso = operator.lower()
+        yr = year.lower() if year else 'all'
 
         # Select data to run analysis on based on the dataframe input param
         match tso:
             case '50hertz':
-                _run_analysis(operator=tso, data=F_HERTZ)
+                if yr == 'all':
+                    _run_analysis(operator=tso, data=F_HERTZ)
+                else:
+                    _run_analysis(operator=tso, data={yr: F_HERTZ[yr]})
             case 'amprion':
-                _run_analysis(operator=tso, data=AMPRION)
+                if yr == 'all':
+                    _run_analysis(operator=tso, data=AMPRION)
+                else:
+                    _run_analysis(operator=tso, data={yr: AMPRION[yr]})
             case 'tennet':
-                _run_analysis(operator=tso, data=TENNET)
+                if yr == 'all':
+                    _run_analysis(operator=tso, data=TENNET)
+                else:
+                    _run_analysis(operator=tso, data={yr: TENNET[yr]})
             case 'transnetbw':
-                _run_analysis(operator=tso, data=TRANSNET_BW)
+                if yr == 'all':
+                    _run_analysis(operator=tso, data=TRANSNET_BW)
+                else:
+                    _run_analysis(operator=tso, data={yr: TRANSNET_BW[yr]})
             case 'all':
-                for area, df in ANALYSIS_DFS.items():
-                    _run_analysis(operator=area, data=df)
+                if yr == 'all':
+                    for area, years_dict in ANALYSIS_DFS.items():
+                        _run_analysis(operator=area, data=years_dict)
+                else:
+                    for area, years_dict in ANALYSIS_DFS.items():
+                        _run_analysis(operator=area, data={yr: years_dict[yr]})
             case _:
                 print(f"InputError: Unknown argument '{tso}'. Run '--help' for more information.")
 
