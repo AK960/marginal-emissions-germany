@@ -103,30 +103,32 @@ def plot_estimated_emissions(data, tso, year, run):
     rmse = np.sqrt(mse)
 
     # Create Plot
-    plt.style.use('default')
-    plt.figure(figsize=(12, 6))
-    plt.plot(df_plot.index, df_plot['total_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
-    plt.plot(df_plot.index, df_plot['estimated_emissions'], label='Model Estimation (Scaled)', alpha=0.7,
-             linestyle='--')
+    with plt.style.context('default'):
+        plt.figure(figsize=(12, 6))
+        plt.plot(df_plot.index, df_plot['total_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
+        plt.plot(df_plot.index, df_plot['estimated_emissions'], label='Model Estimation (Scaled)', alpha=0.7,
+                 linestyle='--')
 
-    plt.title(
-        f"MSDR Model Validation - {tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f}")
-    plt.ylabel("Scaled Emissions")
-    plt.xlabel("Time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+        plt.title(
+            f"MSDR Model Validation - {tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f}")
+        plt.ylabel("Scaled Emissions")
+        plt.xlabel("Time")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
 
-    # Save plot
-    try:
-        save_dir = here() / "results" / f"{tso}_run_{run}_{year}" / "figures"
-        os.makedirs(save_dir, exist_ok=True)
+        # Save plot
+        try:
+            save_dir = here() / "results" / f"{tso}_run_{run}_{year}" / "figures"
+            os.makedirs(save_dir, exist_ok=True)
 
-        filename = save_dir / f"{tso}_{year}_prediction.png"
-        plt.savefig(filename)
-        plt.close()  # Close figure to free memory
-        logger.info(f"Estimated plot saved to {filename}")
-    except Exception as e:
-        logger.error(f"Failed to save image to file: {e}. Continuing...")
+            filename = save_dir / f"{tso}_{year}_prediction.png"
+            plt.savefig(filename)
+            plt.close()  # Close figure to free memory
+            logger.info(f"Estimated plot saved to {filename}")
+        except Exception as e:
+            logger.error(f"Failed to save image to file: {e}. Continuing...")
+        finally:
+            plt.close()
 plt.close()  # Ensure the figure is closed even on error
 
 def say_hello(self):
