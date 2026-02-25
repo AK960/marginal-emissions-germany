@@ -403,17 +403,13 @@ class MSDRAnalyzer:
             logger.error(f"Model fitting failed with error: {e}")
             return None, np.inf, np.inf
 
-    def _plot_estimated_emissions(self, data, **kwargs):
+    def _plot_estimated_emissions(self):
         """
         Plots the estimated vs. original emissions and calculates performance metrics.
         Saves the plot as a PNG file.
         """
         # Filter data to remove NaNs (e.g., the first window)
-        if data:
-            df_plot = data.dropna(subset=['estimated_emissions', 'total_emissions'])
-
-        else:
-            df_plot = self.estimated_emi.dropna(subset=['estimated_emissions', 'total_emissions'])
+        df_plot = self.estimated_emi.dropna(subset=['estimated_emissions', 'total_emissions'])
 
         if df_plot.empty:
             print("Warning: No valid data points for plotting (maybe window length > data length?)")
