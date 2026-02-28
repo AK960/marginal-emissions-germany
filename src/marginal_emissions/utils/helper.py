@@ -6,6 +6,7 @@ from typing import List
 
 import numpy as np
 from matplotlib import pyplot as plt
+from statsmodels.tsa.stattools import adfuller
 from pyprojroot import here
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
@@ -130,6 +131,44 @@ def plot_estimated_emissions(data, tso, year, run):
         finally:
             plt.close()
 plt.close()  # Ensure the figure is closed even on error
+
+def test_stationarity(timeseries, column_name):
+    """
+    Performs augmented Dickey-Fuller test for stationarity of a time series.
+    """
+    logger.info(f"Performing stationarity test for {column_name}")
+
+    timeseries_clean = timeseries.dropna()
+
+    result = adfuller(timeseries_clean, autolag='AIC')
+
+    # Extract results
+    adf_statistic = result[0]
+    p_value = result[1]
+    used_lags = result[2]
+    n_observations = result[3]
+    critical_values = result[4]
+
+    # Ergebnisse übersichtlich ausgeben
+    print(f"ADF-Statistik:  {adf_statistic:.4f}")
+    print(f"p-Wert:         {p_value:.4f}")
+    print(f"Verwendete Lags: {used_lags}")
+    print(f"Anzahl Beobachtungen: {n_observations}")
+    print("Kritische Werte:")
+    for key, value in critical_values.items():
+        print(f"   {key}: {value:.4f}")
+
+    # Print interpretation
+    print("-" * 40)
+    if p_value < 0.05:
+        print("Ergebnis: p-Wert < 0.05. Die Nullhypothese wird abgelehnt.")
+        print("-> Die Zeitreihe ist STATIONÄR (ohne stochastischen Trend).")
+    else:
+        print("Ergebnis: p-Wert >= 0.05. Die Nullhypothese kann NICHT abgelehnt werden.")
+        print("-> Die Zeitreihe ist NICHT STATIONÄR (stochastischer Trend vorhanden).")
+    print("\n")
+
+    return result
 
 def say_hello(self):
     print("Hello from marginal_emissions!")
