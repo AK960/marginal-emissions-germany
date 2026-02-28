@@ -2,16 +2,15 @@
 Class for performing the MSDR analysis.
 """
 
+import json
 import os
 import warnings
 from pathlib import Path
 
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytz
-import json
 import statsmodels.api as sm
 from joblib import Parallel, delayed
 from pyprojroot import here
@@ -89,31 +88,27 @@ class MSDRAnalyzer:
             # Check input data
             df = self._set_types(self.df)
 
-            # Calculating the delta between two consecutive rows to eliminate trends
-            delta_df = df - df.shift(1)
-            delta_df = delta_df[1:]  # Dropping the first row will be NaN
-
             # Ensure the frequency and index are set after shifting/dropping
-            delta_df = delta_df.asfreq('15min')
-            delta_df = self._set_types(delta_df)
+            df = df.asfreq('15min')
+            df = self._set_types(df)
 
             # Fill any NaNs created by asfreq (if gaps existed) or shift
-            if delta_df.isnull().values.any():
+            if df.isnull().values.any():
                 # Interpolate is often better than ffill for physical time series
-                delta_df = delta_df.interpolate(method='time')
+                df = df.interpolate(method='time')
                 # If NaNs remain (e.g., at start), drop them
-                delta_df = delta_df.dropna()
+                df = df.dropna()
 
             # Scaling data to have zero mean and unit variance (z-transformation)
-            delta_df[['total_generation', 'total_emissions']] = self.scaler.fit_transform(
-                delta_df[['total_generation', 'total_emissions']]
+            df[['delta_generation', 'total_emissions']] = self.scaler.fit_transform(
+                df[['delta_generation', 'total_emissions']]
             )
 
             # Print inspection
-            self._inspect_data(delta_df)
+            self._inspect_data(df)
 
             # Set state
-            self.prep_df = delta_df
+            self.prep_df = df
 
         except Exception as e:
             logger.error(f"Failed to prepare data: {e}")
@@ -232,7 +227,7 @@ class MSDRAnalyzer:
                 gen_coeffs = {}
                 for r in range(3): # Check for up to 3 regimes
                     # Possible names for Regime r
-                    candidates = [f'x1[{r}]', f'total_generation[{r}]']
+                    candidates = [f'x1[{r}]', f'delta_generation[{r}]']
                     for name in candidates:
                         if name in params:
                             gen_coeffs[r] = params[name]
@@ -241,7 +236,7 @@ class MSDRAnalyzer:
                     # If no regime-specific param found, check for global param
                     if r not in gen_coeffs:
                         if 'x1' in params: gen_coeffs[r] = params['x1']
-                        elif 'total_generation' in params: gen_coeffs[r] = params['total_generation']
+                        elif 'delta_generation' in params: gen_coeffs[r] = params['delta_generation']
 
                 # 3. Calculate Weighted Averages (Combined MEF and Intercept)
                 combined_gen_coeff = 0
@@ -275,7 +270,7 @@ class MSDRAnalyzer:
     def merge_mef(self):
         """
         Merges the calculated absolute MEF back to the original input data.
-        Returns a DataFrame with the original 'total_generation', 'total_emissions' and the new 'MEF'.
+        Returns a DataFrame with the original 'delta_generation', 'total_emissions' and the new 'MEF'.
         :return merged_df:
         """
         if self.prep_df.empty:
@@ -301,7 +296,7 @@ class MSDRAnalyzer:
         """
         Tests many different model parameters to determine the best model for a given rolling time window. For every last timestamp in the window, it returns the best model.
         :param i: Index of the current window
-        :param data: DataFrame with 'total_emissions' and 'total_generation' columns
+        :param data: DataFrame with 'total_emissions' and 'delta_generation' columns
         :returns best_result: Determined model parameters
         """
         current_window = data.iloc[i : i + self.window_length]
@@ -373,14 +368,14 @@ class MSDRAnalyzer:
     def _fit_markov_model(window_data, params):
         """
         Fits a single Markov Regression model for a given window and parameters. The fitted model is used for in-sample prediction and error computation.
-        :param window_data: DataFrame with 'total_emissions' and 'total_generation' columns
+        :param window_data: DataFrame with 'total_emissions' and 'delta_generation' columns
         :param params: Dictionary with model parameters
         :returns msdr_results: Determined model parameters
         """
         try:
             msdr_model = sm.tsa.MarkovRegression(
                 endog=window_data['total_emissions'],
-                exog=window_data[['total_generation']],
+                exog=window_data[['delta_generation']],
                 k_regimes=params['k_regimes'],
                 trend=params['trend'],
                 order=params['order'],
@@ -560,7 +555,7 @@ class MSDRAnalyzer:
         # Ensure numeric types for relevant columns
         try:
             logger.info("Setting columns to numeric...")
-            cols_to_check = ['total_generation', 'total_emissions']
+            cols_to_check = ['delta_generation', 'total_emissions']
             for col in cols_to_check:
                 if col in df.columns and not pd.api.types.is_float_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -579,9 +574,9 @@ class MSDRAnalyzer:
         """
         print("[INSPECTION]")
         print(f"  - Index Type: {df.index.dtype}")
-        print(f"  - Duplicate Entries: {(df.index.duplicated()).sum()}")
-        print(f"  - Total Generation Type: {df.total_generation.dtype}")
-        print(f"  - Negative Generation Values: {(df['total_generation'] < 0).sum()}")
-        print(f"  - Total Emissions Type: {df.total_emissions.dtype}")
-        print(f"  - Negative Emissions Values: {(df['total_emissions'] < 0).sum()}")
-        print(f"  - Rows with NaN Values: {(df.isnull().sum()).sum()}")
+        print(f"  - Duplicates: {(df.index.duplicated()).sum()}")
+        print(f"  - NaNs: {(df.isnull().sum()).sum()}")
+        print(f"  - Delta Gen Type: {df.delta_generation.dtype}")
+        print(f"  - Neg. Gen: {(df['delta_generation'] < 0).sum()}")
+        print(f"  - Delta Emi Type: {df.total_emissions.dtype}")
+        print(f"  - Neg. Emi: {(df['total_emissions'] < 0).sum()}")
