@@ -64,10 +64,11 @@ class MSDRAnalyzer:
         self.param_grid = param_grid if param_grid is not None else {
             'k_regimes': [2, 3], # Tests 2 or 3 regimes
             'trend': ['c'], # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
-            'order': [0], # Remove autoregression effects (MEF shall be explained by delta generation, not by prev MFE (Default = 0)
+            'order': [1], # Remove autoregression effects (MEF shall be explained by delta generation, not by prev MFE (Default = 0)
             'switching_trend': [True], # Allows for different intercept for each regime (Default = True)
             'switching_exog': [True], # Allows different slope for each regime (Default = True)
-            'switching_variance': [True] # Allows different variance for each regime (Default = False)
+            'switching_variance': [True]#, # Allows different variance for each regime (Default = False)
+            # regularization: ['l1', 'l2']
         }
         ## Outcomes
         self.indicators = []            # Contains indicators of the best model for evaluation --> not flat thus list not df
