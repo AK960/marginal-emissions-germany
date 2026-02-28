@@ -100,8 +100,8 @@ class MSDRAnalyzer:
                 df = df.dropna()
 
             # Scaling data to have zero mean and unit variance (z-transformation)
-            df[['delta_generation', 'total_emissions']] = self.scaler.fit_transform(
-                df[['delta_generation', 'total_emissions']]
+            df[['delta_generation', 'delta_emissions']] = self.scaler.fit_transform(
+                df[['delta_generation', 'delta_emissions']]
             )
 
             # Print inspection
@@ -140,7 +140,7 @@ class MSDRAnalyzer:
             raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
 
         logger.info("Performing in-sample prediction with best models...")
-        self.estimated_emi = self.prep_df[['total_emissions']].copy()
+        self.estimated_emi = self.prep_df[['delta_emissions']].copy()
         self.estimated_emi['estimated_emissions'] = np.nan
 
         # Iterate through results and predict the next step
@@ -270,7 +270,7 @@ class MSDRAnalyzer:
     def merge_mef(self):
         """
         Merges the calculated absolute MEF back to the original input data.
-        Returns a DataFrame with the original 'delta_generation', 'total_emissions' and the new 'MEF'.
+        Returns a DataFrame with the original 'delta_generation', 'delta_emissions' and the new 'MEF'.
         :return merged_df:
         """
         if self.prep_df.empty:
@@ -296,7 +296,7 @@ class MSDRAnalyzer:
         """
         Tests many different model parameters to determine the best model for a given rolling time window. For every last timestamp in the window, it returns the best model.
         :param i: Index of the current window
-        :param data: DataFrame with 'total_emissions' and 'delta_generation' columns
+        :param data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :returns best_result: Determined model parameters
         """
         current_window = data.iloc[i : i + self.window_length]
@@ -368,13 +368,13 @@ class MSDRAnalyzer:
     def _fit_markov_model(window_data, params):
         """
         Fits a single Markov Regression model for a given window and parameters. The fitted model is used for in-sample prediction and error computation.
-        :param window_data: DataFrame with 'total_emissions' and 'delta_generation' columns
+        :param window_data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :param params: Dictionary with model parameters
         :returns msdr_results: Determined model parameters
         """
         try:
             msdr_model = sm.tsa.MarkovRegression(
-                endog=window_data['total_emissions'],
+                endog=window_data['delta_emissions'],
                 exog=window_data[['delta_generation']],
                 k_regimes=params['k_regimes'],
                 trend=params['trend'],
@@ -391,7 +391,7 @@ class MSDRAnalyzer:
             msdr_predict = msdr_result.predict(start=window_data.index[1], end=window_data.index[-1])
 
             # Compute MAE (Mean Absolute Error)
-            mae = np.mean(np.abs(window_data['total_emissions'] - msdr_predict))
+            mae = np.mean(np.abs(window_data['delta_emissions'] - msdr_predict))
 
             return msdr_result, msdr_result.aic, mae
 
@@ -405,21 +405,21 @@ class MSDRAnalyzer:
         Saves the plot as a PNG file.
         """
         # Filter data to remove NaNs (e.g., the first window)
-        df_plot = self.estimated_emi.dropna(subset=['estimated_emissions', 'total_emissions'])
+        df_plot = self.estimated_emi.dropna(subset=['estimated_emissions', 'delta_emissions'])
 
         if df_plot.empty:
             print("Warning: No valid data points for plotting (maybe window length > data length?)")
             return
 
         # Calculate metrics
-        r2 = r2_score(df_plot['total_emissions'], df_plot['estimated_emissions'])
-        mae = mean_absolute_error(df_plot['total_emissions'], df_plot['estimated_emissions'])
-        mse = mean_squared_error(df_plot['total_emissions'], df_plot['estimated_emissions'])
+        r2 = r2_score(df_plot['delta_emissions'], df_plot['estimated_emissions'])
+        mae = mean_absolute_error(df_plot['delta_emissions'], df_plot['estimated_emissions'])
+        mse = mean_squared_error(df_plot['delta_emissions'], df_plot['estimated_emissions'])
         rmse = np.sqrt(mse)
 
         # Create Plot
         plt.figure(figsize=(12, 6))
-        plt.plot(df_plot.index, df_plot['total_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
+        plt.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
         plt.plot(df_plot.index, df_plot['estimated_emissions'], label='Model Estimation (Scaled)', alpha=0.7, linestyle='--')
 
         plt.title(f"MSDR Model Validation - {self.tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f}")
@@ -555,7 +555,7 @@ class MSDRAnalyzer:
         # Ensure numeric types for relevant columns
         try:
             logger.info("Setting columns to numeric...")
-            cols_to_check = ['delta_generation', 'total_emissions']
+            cols_to_check = ['delta_generation', 'delta_emissions']
             for col in cols_to_check:
                 if col in df.columns and not pd.api.types.is_float_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -578,5 +578,5 @@ class MSDRAnalyzer:
         print(f"  - NaNs: {(df.isnull().sum()).sum()}")
         print(f"  - Delta Gen Type: {df.delta_generation.dtype}")
         print(f"  - Neg. Gen: {(df['delta_generation'] < 0).sum()}")
-        print(f"  - Delta Emi Type: {df.total_emissions.dtype}")
-        print(f"  - Neg. Emi: {(df['total_emissions'] < 0).sum()}")
+        print(f"  - Delta Emi Type: {df.delta_emissions.dtype}")
+        print(f"  - Neg. Emi: {(df['delta_emissions'] < 0).sum()}")
