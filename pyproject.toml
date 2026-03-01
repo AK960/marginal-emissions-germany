@@ -40,7 +40,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "marginal-emissions-germany"
 version = "0.1"
-description = "Tool to compute a MEF signal for the German electricity mix"
+description = "Tool to _compute_mef a MEF signal for the German electricity mix"
 authors = [
     {name = "Alexander Kleinwächter", email = "a.kleinwaechter97@gmail.com"}
 ]

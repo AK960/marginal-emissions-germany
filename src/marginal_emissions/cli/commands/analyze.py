@@ -50,7 +50,7 @@ def set_data(
 ):
     if is_test:
         logger.info("PERFORMING TEST RUN")
-        _run_analysis(operator='test', data=TEST_DF, is_test=True)
+        _run_analysis(data=TEST_DF, is_test=True)
     elif operator:
         tso = operator.lower()
         yr = year.lower() if year else 'all'
@@ -85,14 +85,17 @@ def set_data(
                     for area, years_dict in ANALYSIS_DFS.items():
                         _run_analysis(operator=area, data={yr: years_dict[yr]})
             case _:
-                print(f"InputError: Unknown argument '{tso}'. Run '--help' for more information.")
+                logger.error(f"Unknown argument '{tso}'. Run '--help' for more information.")
 
     else:
-        logger.error("Must provide either -t or -tso flag.")
+        logger.error("Must provide either -t or -tso and -y flag.")
 
-def _run_analysis(operator, data, is_test=False):
+def _run_analysis(data, operator=None, is_test=False):
     # Check last run for class initialization
     if not is_test:
+        if operator is None:
+            raise ValueError("Operator must be provided for non-test runs.")
+
         new_run = _check_last_run(name=operator) + 1
         for year, df in data.items():
             # Run analysis
@@ -102,20 +105,28 @@ def _run_analysis(operator, data, is_test=False):
                 analyzer.prepare()
                 analyzer.fit()
                 analyzer.predict()
-                analyzer.compute()
+                analyzer._compute_mef()
                 analyzer.merge_mef()
                 logger.info(f"Finished analysis for {operator} in {year}")
             except Exception as e:
                 logger.error(f"Analysis failed with error: {e}")
 
     else:
-        new_run = 0
-        analyzer = MSDRAnalyzer(tso=operator, data=data, run=new_run, year=0)
+        analyzer = MSDRAnalyzer(data=data)
         analyzer.prepare()
-        analyzer.fit()
-        analyzer.predict()
-        analyzer.compute()
-        analyzer.merge_mef()
+        analyzer.fit_compute()
+        analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
+        analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
+        analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
+        analyzer.plot_over_time(
+            data=analyzer.final_df,
+            col1='delta_emissions',
+            col1_label='Emissions',
+            col2='delta_estimated_emissions',
+            col2_label='Estimated Emissions',
+            y_label='Emissions (Scaled)',
+            out_filename='estimated_emissions.png'
+        )
         logger.info(f"Finished test run!")
 
 def _check_last_run(name) -> int:

@@ -11,43 +11,27 @@ data_dir = root / "data" / "processed"
 ANALYSIS_DFS = {
     '50Hertz': {
         '2023': pd.read_csv(f'{data_dir}/final_f_hertz_2023_15min_utc_202212232315_202401010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            ),
+                            index_col=0),
         '2024': pd.read_csv(f'{data_dir}/final_f_hertz_2024_15min_utc_202312232300_202501010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            )
+                            index_col=0)
     },
     'Amprion': {
         '2023': pd.read_csv(f'{data_dir}/final_amprion_2023_15min_utc_202212232315_202401010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            ),
+                            index_col=0),
         '2024': pd.read_csv(f'{data_dir}/final_amprion_2024_15min_utc_202312232300_202501010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            )
+                            index_col=0)
     },
     'TenneT': {
         '2023': pd.read_csv(f'{data_dir}/final_tennet_2023_15min_utc_202212232315_202401010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            ),
+                            index_col=0),
         '2024': pd.read_csv(f'{data_dir}/final_tennet_2024_15min_utc_202312232300_202501010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            )
+                            index_col=0)
     },
     'TransnetBW': {
         '2023': pd.read_csv(f'{data_dir}/final_transnet_bw_2023_15min_utc_202212232315_202401010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            ),
+                            index_col=0),
         '2024': pd.read_csv(f'{data_dir}/final_transnet_bw_2024_15min_utc_202312232300_202501010000.csv',
-                            index_col=0,
-                            usecols=['delta_generation', 'delta_generation']
-                            )
+                            index_col=0)
     }
 }
 

@@ -32,13 +32,13 @@ warnings.simplefilter('ignore', RuntimeWarning)
 class MSDRAnalyzer:
     def __init__(
         self,
-        tso,
-        year,
         data,
-        window_length=672, # 1 week = 7*24*4
-        param_grid=None,
-        n_jobs=-1,
-        run = '1'
+        tso=None,
+        year=None,
+        window_length = 672, # 1 week = 7*24*4
+        param_grid = None,
+        n_jobs = -1,
+        run:str = None
     ):
         """
         Initialize a MSDR Analysis Object
@@ -56,7 +56,7 @@ class MSDRAnalyzer:
         self.scaler = StandardScaler()
         # Analysis
         ## Data
-        self.df = data
+        self.df = data # Contains original data
         ## Params
         self.window_length = window_length
         self.n_jobs = n_jobs
@@ -66,17 +66,13 @@ class MSDRAnalyzer:
             'order': [1], # Remove autoregression effects (MEF shall be explained by delta generation, not by prev MFE (Default = 0)
             'switching_trend': [True], # Allows for different intercept for each regime (Default = True)
             'switching_exog': [True], # Allows different slope for each regime (Default = True)
-            'switching_variance': [True]#, # Allows different variance for each regime (Default = False)
-            # regularization: ['l1', 'l2']
+            'switching_variance': [True] # Allows different variance for each regime (Default = False)
         }
         ## Outcomes
-        self.indicators = []            # Contains indicators of the best model for evaluation --> not flat thus list not df
-        self.prep_df = None             # Shifted and z-transformed original df
-        self.estimated_emi = None       # DataFrame with estimated emissions from predict(), used to plot true vs. estimated emissions
-        self.best_model_results = []    # Will store a MarkovRegressionWrapper Object for each best model per timestamp, used for prediction
-        self.best_maes = []             # Stores best maes from chosen best model in fit()
-        self.df_mef_scaled = pd.DataFrame(columns=['intercept_scaled', 'mef_scaled']) # Stores smooth_prop weighed combined intercept and coefficient (total mef)
-        self.df_mef_absolute = None
+        self.prep_df = None     # Df, specifically prepped for analysis: contains only z-transformed delta_generation and delta_emissions
+        self.indicators = []    # Contains indicators of the best model for evaluation --> not flat thus list not df
+        self.coeffs_df = None   # Contains regime coefficients with descriptive statistics params
+        self.final_df = None    # Df, that stores interim and final results
 
     # ____________________ Public functions ____________________#
     def prepare(self):
@@ -85,18 +81,16 @@ class MSDRAnalyzer:
         """
         logger.info("Preparing data...")
         try:
-            # Check input data
-            df = self._set_types(self.df)
+            # Select delta columns
+            df = self.df[['delta_generation', 'delta_emissions']].copy()
 
-            # Ensure the frequency and index are set after shifting/dropping
-            df = df.asfreq('15min')
+            # Check input data
             df = self._set_types(df)
 
             # Fill any NaNs created by asfreq (if gaps existed) or shift
             if df.isnull().values.any():
-                # Interpolate is often better than ffill for physical time series
+                # Interpolate by time to avoid hard jumps & drop remaining NaNs
                 df = df.interpolate(method='time')
-                # If NaNs remain (e.g., at start), drop them
                 df = df.dropna()
 
             # Scaling data to have zero mean and unit variance (z-transformation)
@@ -107,212 +101,70 @@ class MSDRAnalyzer:
             # Print inspection
             self._inspect_data(df)
 
-            # Set state
+            # Set analysis df as state
             self.prep_df = df
 
         except Exception as e:
             logger.error(f"Failed to prepare data: {e}")
 
-        return self.prep_df
-
-    def fit(self):
+    def fit_compute(self):
         """
         Fits a msdr model for each timestamp in the time series.
         """
-        logger.info(f"Fitting model for {len(self.prep_df) - self.window_length + 1} observations...")
+        if self.prep_df.empty:
+            raise ValueError("Data not prepared yet. Call prepare() first.")
+
+        logger.info(f"Fitting model and computing MEF for {len(self.prep_df) - self.window_length + 1} observations...")
         try:
             # Parallel execution with a progress bar
             results = Parallel(n_jobs=self.n_jobs)(
-                delayed(self._process_window)(i, self.prep_df)
+                delayed(self._process_window)(i=i, prep_data=self.prep_df)
                 for i in tqdm(range(len(self.prep_df) - self.window_length + 1), desc=f"Analyzing {self.tso}")
             )
-            self.best_model_results, self.best_maes = zip(*results)
+
+            valid_results = [r for r in results if r is not None]
+
+            if valid_results:
+                self.final_df = pd.DataFrame([r['data'] for r in valid_results]).set_index('timestamp').sort_index()
+                self.indicators = [r['indicator'] for r in valid_results]
+
+                all_coeffs_list = [r['coeffs'] for r in valid_results]
+                self.coeffs_df = pd.concat(all_coeffs_list, ignore_index=True)
+                self.coeffs_df.set_index(['timestamp', 'parameter'], inplace=True)
+            else:
+                logger.warning("No valid models were fitted across the entire dataset.")
+                self.final_df = pd.DataFrame()
+                self.coeffs_df = pd.DataFrame()
+
+            logger.info(f"Finished model fitting and MEF computation!")
+
         except Exception as e:
             logger.error(f"Failed to run analysis. Exit with error: {e}")
 
-    def predict(self):
-        """
-        Estimates the emission time series using the best model for each window.
-        """
-        if self.prep_df.empty:
-            raise ValueError("Data not prepared yet. Call prepare() first.")
-        if not self.best_model_results:
-            raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
-
-        logger.info("Performing in-sample prediction with best models...")
-        self.estimated_emi = self.prep_df[['delta_emissions']].copy()
-        self.estimated_emi['estimated_emissions'] = np.nan
-
-        # Iterate through results and predict the next step
-        for i in range(len(self.prep_df) - self.window_length + 1):
-            reg_win = self.prep_df.iloc[i: i + self.window_length]
-            msdr_results = self.best_model_results[i]
-
-            if msdr_results is not None:
-                # Predict for the last point in the window (or next step if forecasting)
-                # Based on notebook logic: predict(start=end, end=end)
-                forecast = msdr_results.predict(start=reg_win.index[-1], end=reg_win.index[-1])
-                self.estimated_emi.loc[reg_win.index[-1], 'estimated_emissions'] = forecast.iloc[0]
-            else:
-                logger.warning(f'No results for window ending on {reg_win.index[-1]}')
-
-        logger.info("Plotting estimated emissions...")
-        self._save_to_file(data=self.estimated_emi, sub_dir='tables', filename='df_estimated_emissions.csv')
-        self._plot_estimated_emissions()
-
-    def compute(self):
-        """
-        Computes the Marginal Emission Factor (MEF) from the best models by calculating a weighted average of the regime-specific coefficients based on smoothed probabilities.
-        """
-        if self.prep_df.empty:
-            raise ValueError("Data not prepared yet. Call prepare() first.")
-        if not self.best_model_results:
-            raise ValueError("Analysis not run yet. Call fit() on prepared data first.")
-
-        logger.info("Computing MEF...")
-
-        # Loop vars
-        iterator = len(self.prep_df) - self.window_length + 1
-
-        for i in range(iterator):
-            msdr_results = self.best_model_results[i]
-            mae = self.best_maes[i]
-            timestamp = self.prep_df.index[i + self.window_length - 1] # Timestamp for the result is the END of the window
-
-            if msdr_results is not None:
-                # For each timestamp, save .summary() coefficients in list
-                df_summary_coeffs = pd.concat(
-                    [
-                        msdr_results.params,    # coef
-                        msdr_results.bse,       # std_err
-                        msdr_results.tvalues,   # z
-                        msdr_results.pvalues,   # P>|z|
-                        msdr_results.conf_int() # Conf_int [0.025, 0.975]
-                    ],
-                    axis=1
-                )
-                df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
-
-                indicator_row = {
-                    'timestamp': timestamp,
-                    'coeffs': df_summary_coeffs.to_dict(orient='index'),
-                    'k_regimes': int(msdr_results._results.k_regimes),
-                    'smoothed_probs': msdr_results.smoothed_marginal_probabilities.iloc[-1].to_dict(),
-                    'mae': float(mae),
-                    'aic': float(msdr_results.aic),    # aic = 2k - 2 ln(L) // k = no. model params, L = max Log Likelihood function (no params vs. model fit)
-                    'bic': float(msdr_results.bic),
-                    'hqic': float(msdr_results.hqic),
-                    'llf': float(msdr_results.llf),
-                    'mle_converged': bool(msdr_results.mle_retvals['converged'])
-                }
-                self.indicators.append(indicator_row)
-
-                # For extracting coeffs and iterating
-                params = msdr_results.params.to_dict()
-                smoothed_probs = indicator_row['smoothed_probs']
-
-                # 1. Find Intercepts
-                intercepts = {}
-                for r in range(3): # Check for up to 3 regimes
-                    name = f'const[{r}]'
-                    if name in params:
-                        intercepts[r] = params[name]
-                
-                # Fallback if no switching intercept (global const)
-                if not intercepts and 'const' in params:
-                    for r in range(len(smoothed_probs)):
-                        intercepts[r] = params['const']
-                
-                # 2. Find Generation Coefficients (MEFs)
-                gen_coeffs = {}
-                for r in range(3): # Check for up to 3 regimes
-                    # Possible names for Regime r
-                    candidates = [f'x1[{r}]', f'delta_generation[{r}]']
-                    for name in candidates:
-                        if name in params:
-                            gen_coeffs[r] = params[name]
-                            break
-                    
-                    # If no regime-specific param found, check for global param
-                    if r not in gen_coeffs:
-                        if 'x1' in params: gen_coeffs[r] = params['x1']
-                        elif 'delta_generation' in params: gen_coeffs[r] = params['delta_generation']
-
-                # 3. Calculate Weighted Averages (Combined MEF and Intercept)
-                combined_gen_coeff = 0
-                combined_intercept = 0
-                
-                # Iterate over the actual number of regimes found (length of probs)
-                for r in range(len(smoothed_probs)):
-                    prob = smoothed_probs[r]
-                    combined_gen_coeff += prob * gen_coeffs.get(r, 0)
-                    combined_intercept += prob * intercepts.get(r, 0)
-                
-                # Store the combined coefficients
-                self.df_mef_scaled.loc[timestamp] = {
-                    'intercept_scaled': combined_intercept,
-                    'mef_scaled': combined_gen_coeff
-                }
-
-            else:
-                # Handle missing results
-                logger.warn(f"No results for timestamp {timestamp}. Writing NaN.")
-                self.df_mef_scaled.loc[timestamp] = {
-                    'intercept_scaled': np.nan,
-                    'mef_scaled': np.nan
-                }
-
-        # Save to file
-        self._save_to_file(data=self.df_mef_scaled, sub_dir='tables', filename='df_mef_scaled.csv')
-        self._save_to_file(data=self.indicators, sub_dir='summary', filename='indicators.json')
-        self._inverse_transform_mef()
-
-    def merge_mef(self):
-        """
-        Merges the calculated absolute MEF back to the original input data.
-        Returns a DataFrame with the original 'delta_generation', 'delta_emissions' and the new 'MEF'.
-        :return merged_df:
-        """
-        if self.prep_df.empty:
-            raise ValueError("Data not prepared yet. Call prepare() first.")
-        if self.df_mef_scaled.empty:
-            raise ValueError("MEF not computed yet. Call compute() first.")
-
-        logger.info("Merging MEF back to original data...")
-
-        # Merge back to original data & remove training data (does not have MEF value)
-        merged_df = self.df.join(
-            self.df_mef_absolute[['mef_t_MWh', 'mef_g_kWh', 'intercept']],
-            how='left'
-        )
-        merged_df.dropna(subset=['mef_t_MWh'], inplace=True)
-
-        self._save_to_file(data=merged_df, sub_dir='tables', filename='df_mef_final.csv')
-        return merged_df
-
     # ____________________ Private functions ____________________#
     # ---------- Model fitting ----------#
-    def _process_window(self, i, data):
+    def _process_window(self, i, prep_data):
         """
         Tests many different model parameters to determine the best model for a given rolling time window. For every last timestamp in the window, it returns the best model.
         :param i: Index of the current window
-        :param data: DataFrame with 'delta_emissions' and 'delta_generation' columns
+        :param prep_data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :returns best_result: Determined model parameters
         """
-        current_window = data.iloc[i : i + self.window_length]
-
-        # Ensure the window has the frequency set (important for statsmodels)
-        if current_window.index.freq is None:
-            current_window = current_window.asfreq('15min')
+        current_window = prep_data.iloc[i : i + self.window_length]
+        timestamp = current_window.index[-1]   # timestamp of the last observation of the window:
+                                               # mef and estimated_emissions are computed for this observation
 
         # Model selection params
         best_converged = False
         best_model = None
-        best_mae = np.inf
+        # best_mae = np.inf
         best_aic = np.inf
 
+        # (1) Determine the best model for each window and store it in best_model
         for params in ParameterGrid(self.param_grid):
-            result, aic, mae = self._fit_markov_model(current_window, params)
+            # result contains the returned model object
+            # result, mae = self._fit_markov_model(current_window, params) # Model selection based on MAE
+            result, aic = self._fit_markov_model(current_window, params) # Model selection based on AIC
 
             if result is None:
                 continue
@@ -320,19 +172,17 @@ class MSDRAnalyzer:
             # Check if the model converged
             is_converged = result.mle_retvals['converged']
 
-            ## mae model selection
+            ## Legacy: Select model based on MAE
             """
             # Case 1: No best model yet
             if best_model is None:
                 best_model = result
                 best_mae = mae
-                best_aic = aic
                 best_converged = is_converged
             # Case 2: The new model converged, the old did not -> Take converged one
             elif is_converged and not best_converged:
                 best_model = result
                 best_mae = mae
-                best_aic = aic
                 best_converged = True
             # Case 3: Both converged / did not converge -> Take the one with better mae
             elif is_converged == best_converged:
@@ -340,18 +190,16 @@ class MSDRAnalyzer:
                     best_model = result
                     best_mae = mae
             """
-            ## aic model selection
+            ## Select model based on AIC
             # Case 1: No best model yet
             if best_model is None:
                 best_model = result
-                best_mae = mae
                 best_aic = aic
                 best_converged = is_converged
 
             # Case 2: The new model converged, the old did not -> Take converged one
             elif is_converged and not best_converged:
                 best_model = result
-                best_mae = mae
                 best_aic = aic
                 best_converged = True
 
@@ -359,11 +207,33 @@ class MSDRAnalyzer:
             elif is_converged == best_converged:
                 if aic < best_aic:
                     best_model = result
-                    best_mae = mae
                     best_aic = aic
 
-        return best_model, best_mae
+        # (2) Compute MEF with best_model by passing it to _compute_mef()
+        if best_model is not None:
+            pred_data = self._predict_emissions(model=best_model, timestamp=timestamp)
+            mef_data = self._compute_mef(model=best_model, timestamp=timestamp)
+            indicator_data, coeff_table = self._save_indicators(model=best_model, timestamp=timestamp)
 
+            # Making sure potential NaN values don't crash the unpacking
+            pred_data = pred_data if pred_data else {}
+            mef_data = mef_data if mef_data else {}
+
+            res_row = {
+                'timestamp': timestamp,
+                'delta_generation': current_window['delta_generation'].iloc[-1],
+                'delta_emissions': current_window['delta_emissions'].iloc[-1],
+                **pred_data,
+                **mef_data
+            }
+
+            return {'data': res_row, 'indicator': indicator_data, 'coeffs': coeff_table}
+
+        else:
+            logger.error(f"Failed to fit model for {timestamp}. Model is None.")
+            return None
+
+    # ---------- Methods in the loop ----------#
     @staticmethod
     def _fit_markov_model(window_data, params):
         """
@@ -387,78 +257,252 @@ class MSDRAnalyzer:
             # Train model on the window data
             msdr_result = msdr_model.fit(disp=False)
 
-            # Use fitted model parameters from training for prediction
+            # Legacy: Compute MAE for later model selection
+            """
             msdr_predict = msdr_result.predict(start=window_data.index[1], end=window_data.index[-1])
-
-            # Compute MAE (Mean Absolute Error)
             mae = np.mean(np.abs(window_data['delta_emissions'] - msdr_predict))
+            return msdr_result, mae
+            """
 
-            return msdr_result, msdr_result.aic, mae
+            return msdr_result, msdr_result.aic
 
         except Exception as e:
             logger.error(f"Model fitting failed with error: {e}")
-            return None, np.inf, np.inf
+            return None, np.inf
 
-    def _plot_estimated_emissions(self):
+    @staticmethod
+    def _predict_emissions(model, timestamp):
+        """
+        Estimates the emission time series using the best model for each window.
+        """
+        if model is not None:
+            logger.debug("Performing in-sample prediction with best models...")
+
+            # Predict value for the last point in the window
+
+            forecast = model.predict(start=timestamp, end=timestamp)
+            return {'delta_estimated_emissions': float(forecast.iloc[0])}
+        else:
+            logger.error(f"Failed to predict emissions for {timestamp}. Model is None.")
+            return None
+
+    def _compute_mef(self, model, timestamp):
+        """
+        Computes the Marginal Emission Factor (MEF) from the best models by calculating a weighted average of the regime-specific coefficients based on smoothed probabilities.
+        """
+        if model is not None:
+            logger.debug(f"Computing MEF for {timestamp}...")
+
+            # For extracting coeffs and iterating
+            params = model.params.to_dict()
+            smoothed_probs = model.smoothed_marginal_probabilities.iloc[-1].to_dict()
+
+            # 1. Find Intercepts
+            intercepts = {}
+            for r in range(3):  # Check for up to 3 regimes
+                name = f'const[{r}]'
+                if name in params:
+                    intercepts[r] = params[name]
+
+            # Fallback if no switching intercept (global const)
+            if not intercepts and 'const' in params:
+                for r in range(len(smoothed_probs)):
+                    intercepts[r] = params['const']
+
+            # 2. Find Generation Coefficients (MEFs)
+            gen_coeffs = {}
+            for r in range(3):  # Check for up to 3 regimes
+                # Possible names for Regime r
+                candidates = [f'x1[{r}]', f'delta_generation[{r}]']
+                for name in candidates:
+                    if name in params:
+                        gen_coeffs[r] = params[name]
+                        break
+
+                # If no regime-specific param found, check for global param
+                if r not in gen_coeffs:
+                    if 'x1' in params:
+                        gen_coeffs[r] = params['x1']
+                    elif 'delta_generation' in params:
+                        gen_coeffs[r] = params['delta_generation']
+
+            # 3. Calculate Weighted Averages (Combined MEF and Intercept)
+            combined_gen_coeff = 0
+            combined_intercept = 0
+
+            # Iterate over the actual number of regimes found (length of probs)
+            for r in range(len(smoothed_probs)):
+                prob = smoothed_probs[r]
+                combined_gen_coeff += prob * gen_coeffs.get(r, 0)
+                combined_intercept += prob * intercepts.get(r, 0)
+
+            # Inverse transform the mef and intercept
+            mef_t_mwh, mef_g_kwh, intercept = self._inverse_transform_coeffs(
+                mef_scaled=combined_gen_coeff,
+                icpt_scaled=combined_intercept
+            )
+
+            return {
+                'intercept_scaled': combined_intercept,
+                'mef_scaled': combined_gen_coeff,
+                'mef_t_MWh': mef_t_mwh,
+                'mef_g_kWh': mef_g_kwh,
+                'intercept': intercept
+            }
+
+        else:
+            logger.error(f"Failed to compute MEF for {timestamp}. Model is None.")
+            return None
+
+    def _inverse_transform_coeffs(self, mef_scaled, icpt_scaled):
+        """
+        Function to transform scaled data back to the original scale for evaluation.
+        """
+        logger.debug("Inverse transforming coefficients to get absolute MEF...")
+
+        # Get transforming factors (sd & mean) from the scaler instance
+        # [0] = Generation (X), [1] = Emissions (Y)
+        std_gen = self.scaler.scale_[0]
+        mw_gen = self.scaler.mean_[0]
+        std_emi = self.scaler.scale_[1]
+        mw_emi = self.scaler.mean_[1]
+        slope_factor = std_emi / std_gen    # is slope coefficient, thus: beta_orig = beta_scaled * (std_emi / std_gen)
+
+        # Compute columns values
+        mef_t_mwh = mef_scaled * slope_factor
+        mef_g_kwh = mef_t_mwh * 1000
+        intercept = (
+                icpt_scaled * std_emi
+                + mw_emi
+                - (mef_t_mwh * mw_gen)
+        )
+
+        return mef_t_mwh, mef_g_kwh, intercept
+
+    @staticmethod
+    def _save_indicators(model, timestamp):
+        # For each timestamp, save .summary() coefficients in list
+        if model is not None:
+            logger.debug(f"Storing indicators for {timestamp}...")
+            df_summary_coeffs = pd.concat(
+                [
+                    model.params,  # coef
+                    model.bse,  # std_err
+                    model.tvalues,  # z
+                    model.pvalues,  # P>|z|
+                    model.conf_int()  # Conf_int [0.025, 0.975]
+                ],
+                axis=1
+            )
+            df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
+
+            df_summary_coeffs = df_summary_coeffs.reset_index().rename(columns={'index': 'parameter'})
+            df_summary_coeffs['timestamp'] = timestamp
+
+            indicator_row = {
+                'timestamp': timestamp,
+                'k_regimes': int(model._results.k_regimes),
+                'smoothed_probs': model.smoothed_marginal_probabilities.iloc[-1].to_dict(),
+                'aic': float(model.aic),  # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
+                'bic': float(model.bic),
+                'hqic': float(model.hqic),
+                'llf': float(model.llf),
+                'mle_converged': bool(model.mle_retvals['converged'])
+            }
+
+            return indicator_row, df_summary_coeffs
+        else:
+            logger.error(f"Failed to store indicators for {timestamp}. Model is None.")
+            return None, None
+
+    # ---------- Data & File handling ----------#
+    def plot_over_time(
+            self, data,
+            col1, col1_label,
+            col2, col2_label,
+            y_label,
+            out_filename
+    ):
         """
         Plots the estimated vs. original emissions and calculates performance metrics.
         Saves the plot as a PNG file.
+        :param data: Dataframe that contains col1 and col2
+        :param col1: Column with baseline data
+        :param col1_label: Name of the column with baseline data for legend
+        :param col2: Column with data to be plotted against the baseline
+        :param col2_label: Name of the column to be plotted against the baseline
+        :param y_label: Description of the y-axis
+        :param out_filename: Filename to save the plot
         """
         # Filter data to remove NaNs (e.g., the first window)
-        df_plot = self.estimated_emi.dropna(subset=['estimated_emissions', 'delta_emissions'])
+        df_plot = data[[col1, col2]].copy()
 
-        if df_plot.empty:
-            print("Warning: No valid data points for plotting (maybe window length > data length?)")
+        # Calculate metrics before interpolation for validity
+        df_metrics = df_plot.dropna()
+        if df_metrics.empty:
+            logger.error(f"No valid data points for plotting {out_filename}")
             return
 
-        # Calculate metrics
-        r2 = r2_score(df_plot['delta_emissions'], df_plot['estimated_emissions'])
-        mae = mean_absolute_error(df_plot['delta_emissions'], df_plot['estimated_emissions'])
-        mse = mean_squared_error(df_plot['delta_emissions'], df_plot['estimated_emissions'])
+        r2 = r2_score(df_metrics[col2], df_metrics[col1])
+        mae = mean_absolute_error(df_metrics[col2], df_metrics[col1])
+        mse = mean_squared_error(df_metrics[col2], df_metrics[col1])
         rmse = np.sqrt(mse)
+
+        # Interpolate by time for complete plot
+        if df_plot.isnull().values.any():
+            logger.info(f"Interpolating missing values for plot: {out_filename}")
+            df_plot = df_plot.interpolate(method='time')
+            df_plot = df_plot.dropna()
+
+        if df_plot.empty:
+            logger.error("No valid data points for plotting (maybe window length > data length?)")
+            return
 
         # Create Plot
         plt.figure(figsize=(12, 6))
-        plt.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions (Scaled)', alpha=0.7)
-        plt.plot(df_plot.index, df_plot['estimated_emissions'], label='Model Estimation (Scaled)', alpha=0.7, linestyle='--')
+        plt.plot(df_plot.index, df_plot[col2], label=col2_label, alpha=0.7)
+        plt.plot(df_plot.index, df_plot[col1], label=col1_label, alpha=0.7, linestyle='--')
 
-        plt.title(f"MSDR Model Validation - {self.tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f}")
-        plt.ylabel("Scaled Emissions")
+        plt.title(f"| {self.tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+        plt.ylabel(y_label)
         plt.xlabel("Time")
         plt.legend()
         plt.grid(True, alpha=0.3)
-        
+
         # Save plot
         try:
-            save_dir = self.root / "results" / f"{self.tso}_run_{self.run}_{self.year}" / "figures"
+            if self.run is None:
+                save_dir = self.root / "results" / "test"
+            else:
+                save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}" / "figures"
             os.makedirs(save_dir, exist_ok=True)
-            
-            filename = save_dir / f"{self.tso}_{self.year}_prediction.png"
+
+            filename = save_dir / f"{self.tso}_{self.year}_{out_filename}.png"
             plt.savefig(filename)
             plt.close() # Close figure to free memory
-            logger.info(f"Estimated plot saved to {filename}")
+            logger.info(f"Plot saved to {filename}")
         except Exception as e:
             logger.error(f"Failed to save image to file: {e}. Continuing...")
-            plt.close() # Ensure the figure is closed even on error
+            plt.close()
 
-    # ---------- File handling ----------#
-    def _save_to_file(self, data, sub_dir, filename):
+    def save_to_file(self, data, filename):
         """
         Saves a dataframe to a file.
         :param data: Dataframe to save
-        :param sub_dir: Subdirectory of results folder
         :param filename: Filename
         """
         ext = Path(filename).suffix.lower().lstrip('.')
-        save_dir = self.root / "results" / f"{self.tso}_run_{self.run}_{self.year}" / sub_dir
+        if self.run is None:
+            save_dir = self.root / "results" / "test"
+        else:
+            save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}"
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
 
         match ext:
             case "csv":
                 try:
-                    if str(filename).endswith('.csv'):
-                        data.to_csv(filepath)
+                    data.to_csv(filepath)
                     logger.info(f"Dataframe saved to {filepath}")
                 except Exception as e:
                     logger.error(f"Failed to save dataframe to csv: {e}")
@@ -480,53 +524,17 @@ class MSDRAnalyzer:
             return float(obj)
         raise TypeError(f"Type {type(obj)} is not JSON serializable")
 
-    # ---------- Preprocessing ----------#
-    def _inverse_transform_mef(self):
-        """
-        Function to transform scaled data back to the original scale for evaluation.
-        """
-        logger.info("Inverse transforming coefficients to get absolute MEF...")
-
-        col_slope_scaled = self.df_mef_scaled['mef_scaled']
-        col_intercept_scaled = self.df_mef_scaled['intercept_scaled']
-
-        # Get transforming factors (sd & mean) from the scaler instance
-        # [0] = Generation (X), [1] = Emissions (Y)
-        std_gen = self.scaler.scale_[0]
-        mw_gen = self.scaler.mean_[0]
-        std_emi = self.scaler.scale_[1]
-        mw_emi = self.scaler.mean_[1]
-        slope_factor = std_emi / std_gen    # is slope coefficient, thus: beta_orig = beta_scaled * (std_emi / std_gen)
-
-        # Compute columns values
-        mef_t_mwh = col_slope_scaled * slope_factor
-        mef_g_kwh = mef_t_mwh * 1000
-        intercept_abs = (
-                col_intercept_scaled * std_emi
-                + mw_emi
-                - (mef_t_mwh * mw_gen)
-        )
-
-        # Save columns in df
-        self.df_mef_absolute = pd.DataFrame(
-            {
-                'mef_t_MWh': mef_t_mwh,
-                'mef_g_kWh': mef_g_kwh,
-                'intercept': intercept_abs
-            },
-            index=self.df_mef_scaled.index
-        )
-
-        self._save_to_file(data=self.df_mef_absolute, sub_dir='tables', filename='df_mef_absolute.csv')
-
     @staticmethod
-    def _set_types(df):
+    def _set_types(df, cols_to_check=None):
         """
         Check and transform df for further preparation.
-        :param df:
-        :return df:
+        :param df: Dataframe whose types to set
+        :param cols_to_check: List of columns to check and transform
+        :return df: DataFrame with transformed columns
         """
         # Check if the index is set to 'datetime' col and if columns are numeric
+        if cols_to_check is None:
+            cols_to_check = ['delta_generation', 'delta_emissions']
         try:
             logger.info("Setting index to datetime...")
             if not df.index.name == 'datetime':
@@ -555,13 +563,19 @@ class MSDRAnalyzer:
         # Ensure numeric types for relevant columns
         try:
             logger.info("Setting columns to numeric...")
-            cols_to_check = ['delta_generation', 'delta_emissions']
             for col in cols_to_check:
                 if col in df.columns and not pd.api.types.is_float_dtype(df[col]):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
         except Exception as e:
             logger.error(f"Failed to prepare float columns. Exit with: {e}")
+
+        try:
+            logger.info("Setting frequency to 15min...")
+            df = df.asfreq('15min')
+
+        except Exception as e:
+            logger.error(f"Failed to set frequency to 15min. Exit with: {e}")
 
         return df
 
