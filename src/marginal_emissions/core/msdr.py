@@ -19,6 +19,8 @@ from sklearn.model_selection import ParameterGrid
 from sklearn.preprocessing import StandardScaler
 from statsmodels.tools.sm_exceptions import ValueWarning, ConvergenceWarning
 from tqdm import tqdm
+from scipy import stats
+from pandas.plotting import autocorrelation_plot
 
 from marginal_emissions import logger
 
@@ -90,7 +92,6 @@ class MSDRAnalyzer:
             # Fill any NaNs created by asfreq (if gaps existed) or shift
             if df.isnull().values.any():
                 # Interpolate by time to avoid hard jumps & drop remaining NaNs
-                df = df.interpolate(method='time')
                 df = df.dropna()
 
             # Scaling data to have zero mean and unit variance (z-transformation)
@@ -278,10 +279,11 @@ class MSDRAnalyzer:
         if model is not None:
             logger.debug("Performing in-sample prediction with best models...")
 
-            # Predict value for the last point in the window
+            # Get in-sample estimation of the model for the entire window to save computation time compared to another predict
+            fitted_values = model.fittedvalues
+            estimated_val = fitted_values.iloc[-1]
 
-            forecast = model.predict(start=timestamp, end=timestamp)
-            return {'delta_estimated_emissions': float(forecast.iloc[0])}
+            return {'delta_estimated_emissions': float(estimated_val)}
         else:
             logger.error(f"Failed to predict emissions for {timestamp}. Model is None.")
             return None
@@ -421,7 +423,8 @@ class MSDRAnalyzer:
             col1, col1_label,
             col2, col2_label,
             y_label,
-            out_filename
+            out_filename,
+            plot=False
     ):
         """
         Plots the estimated vs. original emissions and calculates performance metrics.
@@ -433,9 +436,11 @@ class MSDRAnalyzer:
         :param col2_label: Name of the column to be plotted against the baseline
         :param y_label: Description of the y-axis
         :param out_filename: Filename to save the plot
+        :param plot: Choose whether to plot data or save as png-file (Default: False -> save as png-file)
         """
         # Filter data to remove NaNs (e.g., the first window)
         df_plot = data[[col1, col2]].copy()
+        df_plot.index = pd.to_datetime(df_plot.index, format="ISO8601")
 
         # Calculate metrics before interpolation for validity
         df_metrics = df_plot.dropna()
@@ -458,32 +463,92 @@ class MSDRAnalyzer:
             logger.error("No valid data points for plotting (maybe window length > data length?)")
             return
 
-        # Create Plot
-        plt.figure(figsize=(12, 6))
-        plt.plot(df_plot.index, df_plot[col2], label=col2_label, alpha=0.7)
-        plt.plot(df_plot.index, df_plot[col1], label=col1_label, alpha=0.7, linestyle='--')
+        # noinspection PyTypeChecker
+        with plt.style.context('default'):
+            # Create Plot
+            fig, ax = plt.subplots(figsize=(12, 6))
 
-        plt.title(f"| {self.tso}\nR² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
-        plt.ylabel(y_label)
-        plt.xlabel("Time")
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+            ax.plot(df_plot.index, df_plot[col2], label=col2_label, alpha=0.7, color='tab:blue')
+            ax.plot(df_plot.index, df_plot[col1], label=col1_label, alpha=0.7, linestyle='--', color='tab:orange')
 
-        # Save plot
-        try:
-            if self.run is None:
-                save_dir = self.root / "results" / "test"
+            ax.set_title(f"{self.tso}\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+            ax.set_ylabel(y_label)
+            ax.set_xlabel("Time")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            fig.autofmt_xdate(rotation=45)
+
+            if not plot:
+                # Save plot
+                try:
+                    if self.run is None:
+                        save_dir = self.root / "results" / "test"
+                        filename = save_dir / f"{out_filename}"
+                    else:
+                        save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}" / "figures"
+                        filename = save_dir / f"{self.tso}_{self.year}_{out_filename}"
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    fig.savefig(filename, bbox_inches='tight')
+                    logger.info(f"Plot saved to {filename}")
+                except Exception as e:
+                    logger.error(f"Failed to save image to file: {e}. Continuing...")
+                    plt.close()
+                finally:
+                    plt.close(fig)
+
             else:
-                save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}" / "figures"
-            os.makedirs(save_dir, exist_ok=True)
+                plt.show()
 
-            filename = save_dir / f"{self.tso}_{self.year}_{out_filename}.png"
-            plt.savefig(filename)
-            plt.close() # Close figure to free memory
-            logger.info(f"Plot saved to {filename}")
-        except Exception as e:
-            logger.error(f"Failed to save image to file: {e}. Continuing...")
-            plt.close()
+    @staticmethod
+    def diagnose_model_fit(data, orig_col, esti_col):
+        """
+        Print diagnostic plots for model fit.
+        """
+        if data is None or data.empty:
+            logger.error("No data available for model fit diagnostics.")
+            return
+
+        data.index = pd.to_datetime(data.index, format="ISO8601")
+
+        # Analyse residuals
+        residuals = data[orig_col] - data[esti_col]
+
+        # noinspection PyTypeChecker
+        with plt.style.context('default'):
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+            for ax in axes.flat:
+                ax.set_facecolor('white')
+
+            # Residuals over time
+            axes[0, 0].plot(data.index, residuals, color='blue', linewidth=0.8)
+            axes[0, 0].set_title('Residuals over Time')
+            axes[0, 0].axhline(y=0, color='orange', linestyle='--', linewidth=1.5)
+            axes[0, 0].grid(True, alpha=0.3)
+
+            # Histogram of residuals
+            axes[0, 1].hist(residuals, bins=50, color='blue', alpha=0.7, edgecolor='orange')
+            axes[0, 1].set_title('Distribution of Residuals')
+            axes[0, 1].grid(True, alpha=0.3)
+
+            # Q-Q Plot
+            stats.probplot(residuals.dropna(), dist="norm", plot=axes[1, 0])
+            axes[1, 0].get_lines()[0].set_color('blue')
+            axes[1, 0].get_lines()[1].set_color('orange')
+            axes[1, 0].set_title('Q-Q Plot')
+            axes[1, 0].grid(True, alpha=0.3)
+
+            # Autocorrelation of Residuals
+            autocorrelation_plot(residuals.dropna(), ax=axes[1, 1])
+            axes[1, 1].lines[0].set_color('blue')
+            if len(axes[1, 1].lines) > 1:
+                axes[1, 1].lines[1].set_color('orange')
+            axes[1, 1].set_title('Autocorrelation of Residuals')
+            axes[1, 1].grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            plt.show()
 
     def save_to_file(self, data, filename):
         """
