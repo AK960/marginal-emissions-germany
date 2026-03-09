@@ -9,6 +9,7 @@ from pyprojroot import here
 from marginal_emissions import logger
 from marginal_emissions.conf.vars_analyze import *
 from marginal_emissions.core.msdr import MSDRAnalyzer
+from marginal_emissions.utils.helper import *
 
 @click.group(name='analysis')
 def analysis_group():
@@ -114,7 +115,7 @@ def _run_analysis(data, run=None, operator=None, is_test=False):
                 analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
                 analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
                 analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
-                analyzer.plot_over_time(
+                plot_over_time(
                     data=analyzer.final_df,
                     col1='delta_emissions',
                     col1_label='Emissions',
@@ -136,7 +137,7 @@ def _run_analysis(data, run=None, operator=None, is_test=False):
         analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
         analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
         analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
-        analyzer.plot_over_time(
+        plot_over_time(
             data=analyzer.final_df,
             col1='delta_emissions',
             col1_label='Emissions',
