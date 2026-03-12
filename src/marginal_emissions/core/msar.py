@@ -43,7 +43,7 @@ class MSDRAnalyzer:
         run:str = None
     ):
         """
-        Initialize a base MSDR Analysis Object. Requires the input of a dataset with detrended emissions and generation time series.
+        Initialize a MSDR Analysis Object
         :param tso: Name of the Transmission System Operator (TSO)
         :param window_length: Size of the rolling window (default: 1 week = 672 quarters)
         :param param_grid: Dictionary for grid search parameters
@@ -65,6 +65,7 @@ class MSDRAnalyzer:
         self.param_grid = param_grid if param_grid is not None else {
             'k_regimes': [2, 3], # Tests 2 or 3 regimes
             'trend': ['c'], # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
+            'order': [1], # Remove autoregression effects (MEF shall be explained by delta generation, not by prev MFE (Default = 0)
             'switching_trend': [True], # Allows for different intercept for each regime (Default = True)
             'switching_exog': [True], # Allows different slope for each regime (Default = True)
             'switching_variance': [True] # Allows different variance for each regime (Default = False)
@@ -248,6 +249,7 @@ class MSDRAnalyzer:
                 exog=window_data[['delta_generation']],
                 k_regimes=params['k_regimes'],
                 trend=params['trend'],
+                order=params['order'],
                 switching_trend=params['switching_trend'],
                 switching_exog=params['switching_exog'],
                 switching_variance=params['switching_variance']
