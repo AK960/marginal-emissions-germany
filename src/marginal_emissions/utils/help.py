@@ -2,19 +2,23 @@
 Helper functions for the CLI commands
 """
 import os
+from pathlib import Path
 from typing import List
 
+import chardet
+import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import pyplot as plt
-from statsmodels.tsa.stattools import adfuller
+import pandas as pd
+from pandas.plotting import autocorrelation_plot
 from pyprojroot import here
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from statsmodels.tsa.stattools import adfuller
+import matplotlib.pyplot as plt
+from scipy import stats
+from scipy.stats import probplot
+import numpy as np
+from marginal_emissions import logger
 
-from . import logger
-import chardet
-from pathlib import Path
-import pandas as pd
-import pytz
 
 def check_encoding(path) -> str | None:
     """
@@ -133,17 +137,22 @@ def plot_estimated_emissions(data, tso, year, run):
 plt.close()  # Ensure the figure is closed even on error
 
 def plot_over_time(
-        data,
-        col1, col1_label,
-        col2, col2_label,
-        y_label,
-        out_filename,
-        plot=False
+        data, tso, col1, col2,
+        y_label=None,
+        out_filename = None,
+        col1_label='delta_estimated_emissions',
+        col2_label='delta_emissions',
+        plot=False,
+        root = here(),
+        run = None,
+        year = None
 ):
     """
     Plots the estimated vs. original emissions and calculates performance metrics.
     Saves the plot as a PNG file.
+    :param year:
     :param data: Dataframe that contains col1 and col2
+    :param tso: Transmission System Operator (TSO) name
     :param col1: Column with baseline data
     :param col1_label: Name of the column with baseline data for legend
     :param col2: Column with data to be plotted against the baseline
@@ -151,6 +160,8 @@ def plot_over_time(
     :param y_label: Description of the y-axis
     :param out_filename: Filename to save the plot
     :param plot: Choose whether to plot data or save as png-file (Default: False -> save as png-file)
+    :param root: Project root directory
+    :param run: Description of the run for filename
     """
     # Filter data to remove NaNs (e.g., the first window)
     df_plot = data[[col1, col2]].copy()
@@ -195,12 +206,12 @@ def plot_over_time(
         if not plot:
             # Save plot
             try:
-                if run is None:
+                if out_filename is None:
                     save_dir = root / "results" / "test"
-                    filename = save_dir / f"{out_filename}"
+                    filename = save_dir / f"estimation_plot"
                 else:
                     save_dir = root / "results" / f"run_{run}" / f"{tso}_{year}" / "figures"
-                    filename = save_dir / f"{tso}_{year}_{out_filename}"
+                    filename = save_dir / f"{out_filename}"
                 os.makedirs(save_dir, exist_ok=True)
 
                 fig.savefig(filename, bbox_inches='tight')
