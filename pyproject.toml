@@ -20,7 +20,7 @@
 #    [pyproject.toml]
 #    --> see bottom
 #
-#    [src/helper.py]
+#    [src/help.py]
 #    def say_hello():
 #       print("Hello from marginal_emissions!")
 #
