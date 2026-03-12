@@ -20,8 +20,8 @@ tests/
 # Gem Markdown
 GEMINI.md
 
-# Unnecessary files
-notebooks/code_dump.ipynb
+# Legacy Notebooks
+notebooks/legacy/
 
 # Large files
 **/indicators.json
