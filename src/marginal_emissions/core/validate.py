@@ -37,7 +37,7 @@ class MEFValidator:
     # Rubric 2: Empirical Annual Averages Across grid regions (the Annual Average MEF is expected to be positively correlated with the share of coal in the fuel mix)
     def test_ea_mef_alignment(self):
         """
-        It is not expected that MEF vastly differs from the Empirical Annual MEF, unless they are biased towards a particular fuel source. To apply the test, mean absolute percentage error rates are calculated across grid regions
+        It is not expected that MEF vastly differs from the Empirical Annual MEF, unless they are biased towards a particular fuel source. To apply the test_msdr, mean absolute percentage error rates are calculated across grid regions
         """
         pass
 

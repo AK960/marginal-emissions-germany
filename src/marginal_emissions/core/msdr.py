@@ -40,6 +40,7 @@ class MSDRAnalyzer:
         window_length = 672, # 1 week = 7*24*4
         param_grid = None,
         n_jobs = -1,
+        test = True,
         run:str = "msdr"
     ):
         """
@@ -53,6 +54,7 @@ class MSDRAnalyzer:
         self.root = here()
         self.tso = tso
         self.year = year
+        self.test = test
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
@@ -99,7 +101,7 @@ class MSDRAnalyzer:
             )
 
             # Print inspection
-            self._inspect_data(df)
+            #self._inspect_data(df)
 
             # Set analysis df as state
             self.prep_df = df
@@ -423,8 +425,8 @@ class MSDRAnalyzer:
         :param filename: Filename
         """
         ext = Path(filename).suffix.lower().lstrip('.')
-        if self.run is None:
-            save_dir = self.root / "results" / "test"
+        if self.test:
+            save_dir = self.root / "results" / f"test_{self.run}"
         else:
             save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}"
         os.makedirs(save_dir, exist_ok=True)

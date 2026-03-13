@@ -89,7 +89,7 @@ def get_all_subdirs(base_path: str = "./data") -> List[Path]:
     subdirs = sorted([p for p in path.rglob('*') if p.is_dir()])
     return subdirs
 
-def plot_estimated_emissions(data, tso, year, run):
+def plot_estimated_emissions(data, tso, year, run='msar'):
     """
     Plots the estimated vs. original emissions and calculates performance metrics.
     Saves the plot as a PNG file.
@@ -140,17 +140,17 @@ def plot_over_time(
         data, tso, col1, col2,
         y_label=None,
         out_filename = None,
-        col1_label='delta_estimated_emissions',
-        col2_label='delta_emissions',
+        col1_label='Delta Emissions',
+        col2_label='Delta Estimated Emissions',
         plot=False,
         root = here(),
-        run = None,
+        run = 'msar',
         year = None
 ):
     """
     Plots the estimated vs. original emissions and calculates performance metrics.
     Saves the plot as a PNG file.
-    :param year:
+    :param year: Year of the data
     :param data: Dataframe that contains col1 and col2
     :param tso: Transmission System Operator (TSO) name
     :param col1: Column with baseline data
@@ -163,6 +163,7 @@ def plot_over_time(
     :param root: Project root directory
     :param run: Description of the run for filename
     """
+    tso = tso.capitalize() if tso else None
     # Filter data to remove NaNs (e.g., the first window)
     df_plot = data[[col1, col2]].copy()
     df_plot.index = pd.to_datetime(df_plot.index, format="ISO8601")
@@ -207,8 +208,8 @@ def plot_over_time(
             # Save plot
             try:
                 if out_filename is None:
-                    save_dir = root / "results" / "test"
-                    filename = save_dir / f"estimation_plot"
+                    save_dir = root / "results" / f"test_{run}"
+                    filename = save_dir / f"estimated_emissions.png"
                 else:
                     save_dir = root / "results" / f"run_{run}" / f"{tso}_{year}" / "figures"
                     filename = save_dir / f"{out_filename}"
@@ -277,9 +278,9 @@ def diagnose_model_fit(data, orig_col, esti_col):
 
 def test_stationarity(timeseries, column_name):
     """
-    Performs augmented Dickey-Fuller test for stationarity of a time series.
+    Performs augmented Dickey-Fuller test_msdr for stationarity of a time series.
     """
-    logger.info(f"Performing stationarity test for {column_name}")
+    logger.info(f"Performing stationarity test_msdr for {column_name}")
 
     timeseries_clean = timeseries.dropna()
 
