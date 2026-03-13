@@ -1,5 +1,5 @@
 """
-Class for performing the MSDR analysis.
+Class for performing the MSDR analysis with time varying transition probabilities.
 """
 
 import json
@@ -31,19 +31,22 @@ warnings.simplefilter('ignore', ConvergenceWarning)
 # Suppress RuntimeWarning from numpy, which often happens during optimization of unstable models
 warnings.simplefilter('ignore', RuntimeWarning)
 
-class MSDRAnalyzer:
+class MSARAnalyzer:
     def __init__(
         self,
         data,
+        lags=2,
         tso=None,
         year=None,
         window_length = 672, # 1 week = 7*24*4
+        step_size = 32, # Move window by for 8 hours
         param_grid = None,
         n_jobs = -1,
-        run:str = None
+        test = True,
+        run:str = "msar"
     ):
         """
-        Initialize a MSDR Analysis Object
+        Initialize a MSAR Analysis Object that considers autoregression and time varying transition probabilies.
         :param tso: Name of the Transmission System Operator (TSO)
         :param window_length: Size of the rolling window (default: 1 week = 672 quarters)
         :param param_grid: Dictionary for grid search parameters
@@ -53,6 +56,7 @@ class MSDRAnalyzer:
         self.root = here()
         self.tso = tso
         self.year = year
+        self.test = test
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
@@ -62,10 +66,10 @@ class MSDRAnalyzer:
         ## Params
         self.window_length = window_length
         self.n_jobs = n_jobs
+        self.lags = lags
         self.param_grid = param_grid if param_grid is not None else {
             'k_regimes': [2, 3], # Tests 2 or 3 regimes
             'trend': ['c'], # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
-            'order': [1], # Remove autoregression effects (MEF shall be explained by delta generation, not by prev MFE (Default = 0)
             'switching_trend': [True], # Allows for different intercept for each regime (Default = True)
             'switching_exog': [True], # Allows different slope for each regime (Default = True)
             'switching_variance': [True] # Allows different variance for each regime (Default = False)
@@ -94,13 +98,29 @@ class MSDRAnalyzer:
                 # Interpolate by time to avoid hard jumps & drop remaining NaNs
                 df = df.dropna()
 
+            # Add tvtp phases
+            # (1) Extract local time for phases
+            local_times = df.index.tz_convert('Europe/Berlin').time
+
+            # (2) Init columns (constant and dummy vars)
+            # Overnight Trough as baseline
+            df['tvtp_const'] = 1.0
+            # Morning Peak
+            df['tvtp_phase2'] = ((local_times >= pd.to_datetime('06:00:00').time()) &
+                                 (local_times < pd.to_datetime('10:00:00').time())).astype(float)
+            # Solar Trough
+            df['tvtp_phase3'] = ((local_times >= pd.to_datetime('10:00:00').time()) &
+                                 (local_times < pd.to_datetime('16:00:00').time())).astype(float)
+            # Evening Peak
+            df['tvtp_phase4'] = (local_times >= pd.to_datetime('16:00:00').time()).astype(float)
+
             # Scaling data to have zero mean and unit variance (z-transformation)
             df[['delta_generation', 'delta_emissions']] = self.scaler.fit_transform(
                 df[['delta_generation', 'delta_emissions']]
             )
 
             # Print inspection
-            self._inspect_data(df)
+            #self._inspect_data(df)
 
             # Set analysis df as state
             self.prep_df = df
@@ -173,24 +193,6 @@ class MSDRAnalyzer:
             # Check if the model converged
             is_converged = result.mle_retvals['converged']
 
-            ## Legacy: Select model based on MAE
-            """
-            # Case 1: No best model yet
-            if best_model is None:
-                best_model = result
-                best_mae = mae
-                best_converged = is_converged
-            # Case 2: The new model converged, the old did not -> Take converged one
-            elif is_converged and not best_converged:
-                best_model = result
-                best_mae = mae
-                best_converged = True
-            # Case 3: Both converged / did not converge -> Take the one with better mae
-            elif is_converged == best_converged:
-                if mae < best_mae:
-                    best_model = result
-                    best_mae = mae
-            """
             ## Select model based on AIC
             # Case 1: No best model yet
             if best_model is None:
@@ -235,21 +237,45 @@ class MSDRAnalyzer:
             return None
 
     # ---------- Methods in the loop ----------#
-    @staticmethod
-    def _fit_markov_model(window_data, params):
+    def _fit_markov_model(self, window_data, params):
         """
         Fits a single Markov Regression model for a given window and parameters. The fitted model is used for in-sample prediction and error computation.
         :param window_data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :param params: Dictionary with model parameters
         :returns msdr_results: Determined model parameters
         """
+        endog = window_data['delta_emissions']
+        exog = window_data[['delta_generation']].copy()
+
+        tvtp_cols = ['tvtp_const', 'tvtp_phase2', 'tvtp_phase3', 'tvtp_phase4']
+        has_tvtp = all(col in window_data.columns for col in tvtp_cols)
+
+        if has_tvtp:
+            tvtp_df = window_data[tvtp_cols].copy()
+        else:
+            tvtp_df = None
+
+        if self.lags > 0:
+            for i in range(1, self.lags + 1):
+                exog[f'ar_lag_{i}'] = endog.shift(i)
+
+            valid_idx = exog.dropna().index
+
+            endog = endog.loc[valid_idx]
+            exog = exog.loc[valid_idx]
+
+            if has_tvtp:
+                tvtp_df = tvtp_df.loc[valid_idx]
+
+        exog_tvtp_data = tvtp_df.to_numpy(dtype=np.float64) if has_tvtp else None
+
         try:
             msdr_model = sm.tsa.MarkovRegression(
-                endog=window_data['delta_emissions'],
-                exog=window_data[['delta_generation']],
+                endog=endog,
+                exog=exog,
+                exog_tvtp=exog_tvtp_data,
                 k_regimes=params['k_regimes'],
                 trend=params['trend'],
-                order=params['order'],
                 switching_trend=params['switching_trend'],
                 switching_exog=params['switching_exog'],
                 switching_variance=params['switching_variance']
@@ -257,13 +283,6 @@ class MSDRAnalyzer:
 
             # Train model on the window data
             msdr_result = msdr_model.fit(disp=False)
-
-            # Legacy: Compute MAE for later model selection
-            """
-            msdr_predict = msdr_result.predict(start=window_data.index[1], end=window_data.index[-1])
-            mae = np.mean(np.abs(window_data['delta_emissions'] - msdr_predict))
-            return msdr_result, mae
-            """
 
             return msdr_result, msdr_result.aic
 
@@ -425,8 +444,8 @@ class MSDRAnalyzer:
         :param filename: Filename
         """
         ext = Path(filename).suffix.lower().lstrip('.')
-        if self.run is None:
-            save_dir = self.root / "results" / "test"
+        if self.test:
+            save_dir = self.root / "results" / f"test_{self.run}"
         else:
             save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}"
         os.makedirs(save_dir, exist_ok=True)

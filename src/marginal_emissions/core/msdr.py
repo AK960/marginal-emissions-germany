@@ -40,7 +40,7 @@ class MSDRAnalyzer:
         window_length = 672, # 1 week = 7*24*4
         param_grid = None,
         n_jobs = -1,
-        run:str = None
+        run:str = "msdr"
     ):
         """
         Initialize a base MSDR Analysis Object. Requires the input of a dataset with detrended emissions and generation time series.
