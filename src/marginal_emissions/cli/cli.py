@@ -4,8 +4,8 @@ from marginal_emissions.cli.commands.validate import validation_group
 from .commands.synchlatex import synchtex_group
 from .commands.inspect import inspect_group
 from .commands.listapis import listapis_group
-from .commands.fetch import *
-from .commands.prep import prep_group
+from .commands.fetch import fetch_group
+from .commands.prep import prep
 from .commands.analyze import analysis_group
 
 @click.group()
@@ -25,7 +25,7 @@ cli.add_command(inspect_group, name='inspect')
 cli.add_command(fetch_group, name='fetch')
 cli.add_command(listapis_group, name='listapis')
 # cli.add_command(synchtex_group, name='synchtex')
-cli.add_command(prep_group, name='prep')
+cli.add_command(prep)
 cli.add_command(analysis_group, name='analysis')
 cli.add_command(validation_group, name='validation')
 
