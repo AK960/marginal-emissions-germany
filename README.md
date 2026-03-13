@@ -27,7 +27,7 @@ mef-tool analysis run [OPTIONS]
 * `-tso`, `--operator`: Select the TSO to analyze (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`). Defaults to `All`.
 * `-y`, `--year`: Select the year to analyze (`2023`, `2024`). Defaults to `All`.
 * `-t`, `--is-test`: Flag to indicate a test run. This will save results to a separate `results/test/` directory.
-* `--test-rows`: Number of rows to use for the test run (e.g., 100 or 1000). Defaults to 1000.
+* `--num-iterations`: Number of sliding window iterations for the test run. Defaults to 50.
 
 **Example (Normal Run):**
 ```bash
@@ -37,8 +37,8 @@ mef-tool analysis run --operator TenneT --year 2023
 
 **Example (Test Run):**
 ```bash
-# Run a test on the first 100 rows of the Amprion 2024 dataset
-mef-tool analysis run --operator Amprion --year 2024 --is-test --test-rows 100
+# Run a test with 50 iterations on the Amprion 2024 dataset
+mef-tool analysis run --operator Amprion --year 2024 --is-test --num-iterations 50
 ```
 
 ### 3. Workflow Sequence Diagram
@@ -56,35 +56,42 @@ sequenceDiagram
     User->>CLI: mef-tool prep
     CLI->>MEFPreprocessor: __init__()
     
-    Files-->>MEFPreprocessor: Read raw data CSVs
+    Files-->>MEFPreprocessor: Read (data/raw/*.csv)
     
     CLI->>MEFPreprocessor: prep_emissions()
-    CLI->>MEFPreprocessor: prep_generation()
+    MEFPreprocessor->>Files: Write (data/interim/emissions_germany_utc_*.csv)
     
-    MEFPreprocessor->>Files: Write interim CSVs
+    CLI->>MEFPreprocessor: prep_generation()
+    MEFPreprocessor->>Files: Write (data/interim/generation_*.csv)
     
     CLI->>MEFPreprocessor: alloc_emissions()
-    
-    MEFPreprocessor->>Files: Write processed CSVs
+    MEFPreprocessor->>Files: Write (data/processed/final_*.csv)
     
     CLI->>MEFPreprocessor: validate_allocation()
+    MEFPreprocessor->>Files: Write (results/figures/*.png)
     MEFPreprocessor-->>CLI: Return results
     CLI-->>User: Log success/failure
 
-    User->>CLI: mef-tool analysis run --operator TenneT --is-test
+    User->>CLI: mef-tool analysis run --operator TenneT --is-test --num-iterations 50
     CLI->>CLI: _get_analysis_files('TenneT', 'All')
     
     loop For each found file
-        Files-->>CLI: Read processed CSV
-        CLI->>CLI: Truncate data if --is-test
+        CLI->>CLI: Calculate rows_to_load
+        Files-->>CLI: Read (data/processed/final_*.csv)
         CLI->>MSARAnalyzer: __init__(data, tso, year, is_test, test_rows)
         CLI->>MSARAnalyzer: prepare()
         CLI->>MSARAnalyzer: fit_compute()
         
         MSARAnalyzer->>MSARAnalyzer: _plot_results()
-        MSARAnalyzer->>Files: Write plot to results/
+        MSARAnalyzer->>Files: Write plot (results/.../estimated_emissions.png)
         
-        MSARAnalyzer->>Files: Write result CSV & JSON to results/
+        MSARAnalyzer->>MSARAnalyzer: _plot_sawtooth_debug()
+        MSARAnalyzer->>Files: Write (results/.../sawtooth_debug_profile_smoothed.png)
+
+        MSARAnalyzer->>MSARAnalyzer: _plot_avg_daily_profile()
+        MSARAnalyzer->>Files: Write (results/.../mef_avg_daily_profile.png)
+        
+        MSARAnalyzer->>Files: Write (results/.../mef_final.csv, coefficients.csv, indicators.json)
         
     end
     CLI-->>User: Log success/failure
