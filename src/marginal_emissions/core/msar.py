@@ -21,6 +21,7 @@ from statsmodels.tools.sm_exceptions import ValueWarning, ConvergenceWarning
 from tqdm import tqdm
 from scipy import stats
 from pandas.plotting import autocorrelation_plot
+import matplotlib.dates as mdates
 
 from marginal_emissions import logger
 
@@ -44,6 +45,7 @@ class MSARAnalyzer:
         n_jobs = -1,
         test = False,
         test_rows = None,
+        num_iterations = None,
         run:str = "msar"
     ):
         """
@@ -59,6 +61,7 @@ class MSARAnalyzer:
         self.year = year
         self.test = test
         self.test_rows = test_rows
+        self.num_iterations = num_iterations
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
@@ -144,7 +147,7 @@ class MSARAnalyzer:
         if window_indices[-1] != max_idx:
             window_indices.append(max_idx)
 
-        logger.info(f"Fitting model and computing MEF for {len(self.prep_df) - self.window_length + 1} observations...")
+        logger.info(f"Fitting model and computing MEF for {len(window_indices)} windows...")
         try:
             # Parallel execution with a progress bar
             results = Parallel(n_jobs=self.n_jobs)(
@@ -155,14 +158,58 @@ class MSARAnalyzer:
             valid_results = [item for sublist in results if sublist is not None for item in sublist]
 
             if valid_results:
-                self.final_df = pd.DataFrame([r['data'] for r in valid_results]).set_index('timestamp').sort_index()
-                self.indicators = [r['indicator'] for r in valid_results]
+                # --- SMOOTHING LOGIC STARTS HERE ---
+                logger.info("Smoothing MEF results to remove block-boundary jumps...")
 
+                # 1. Create a raw, fully populated DataFrame from results
+                raw_df = pd.DataFrame([r['data'] for r in valid_results]).set_index('timestamp').sort_index()
+
+                mef_cols = ['intercept_scaled', 'mef_scaled', 'mef_t_MWh', 'mef_g_kWh', 'intercept']
+                smoothed_df = raw_df.copy()
+
+                # 2. Iterate through the window boundaries to find and correct jumps
+                for i in range(len(window_indices) - 1):
+                    # Define the current and the next block
+                    current_block_start_idx = window_indices[i]
+                    next_block_start_idx = window_indices[i+1]
+
+                    # Get the timestamps for the end of the current block and start of the next
+                    # The jump occurs between the last point of the old model and the first of the new
+                    end_of_current_block_ts = self.prep_df.index[next_block_start_idx - 1]
+                    start_of_next_block_ts = self.prep_df.index[next_block_start_idx]
+
+                    # Ensure these timestamps exist in our results
+                    if end_of_current_block_ts not in smoothed_df.index or start_of_next_block_ts not in smoothed_df.index:
+                        continue
+
+                    # 3. Calculate the jump (the error) for each MEF column
+                    for col in mef_cols:
+                        jump = smoothed_df.loc[start_of_next_block_ts, col] - smoothed_df.loc[end_of_current_block_ts, col]
+
+                        # 4. Define the slice of the DataFrame that belongs to the current model block
+                        block_slice_start_ts = self.prep_df.index[current_block_start_idx]
+                        block_slice_end_ts = end_of_current_block_ts
+                        block_timestamps = smoothed_df.loc[block_slice_start_ts:block_slice_end_ts].index
+
+                        if len(block_timestamps) <= 1:
+                            continue
+
+                        # 5. Create a linear correction ramp and apply it
+                        # The ramp goes from 0 to `jump` over the length of the block
+                        correction_ramp = np.linspace(0, jump, len(block_timestamps))
+                        smoothed_df.loc[block_timestamps, col] += correction_ramp
+
+                # --- SMOOTHING LOGIC ENDS HERE ---
+
+                self.final_df = smoothed_df
+                self.indicators = [r['indicator'] for r in valid_results]
                 all_coeffs_list = [r['coeffs'] for r in valid_results]
                 self.coeffs_df = pd.concat(all_coeffs_list, ignore_index=True)
                 self.coeffs_df.set_index(['timestamp', 'parameter'], inplace=True)
                 
                 self._plot_results()
+                self._plot_sawtooth_debug(window_indices)
+                self._plot_avg_daily_profile()
             else:
                 logger.warning("No valid models were fitted across the entire dataset.")
                 self.final_df = pd.DataFrame()
@@ -438,7 +485,7 @@ class MSARAnalyzer:
     def _get_save_dir(self):
         """Constructs the save directory based on instance attributes."""
         if self.test:
-            return self.root / "results" / "test" / f"{self.run}" / f"{self.tso}_{self.year}_{self.test_rows}"
+            return self.root / "results" / "test" / f"{self.run}" / f"{self.tso}_{self.year}_{self.num_iterations}"
         else:
             return self.root / "results" / f"{self.run}" / f"{self.tso}" / f"{self.year}"
 
@@ -518,6 +565,119 @@ class MSARAnalyzer:
                 logger.error(f"Failed to save image to file: {e}. Continuing...")
             finally:
                 plt.close(fig)
+
+    def _plot_sawtooth_debug(self, window_indices):
+        """
+        Plots the smoothed MEF timeseries and marks the window boundaries.
+        """
+        if self.final_df is None or 'mef_t_MWh' not in self.final_df.columns:
+            logger.warning("Final DataFrame with MEF not available for sawtooth debug plot.")
+            return
+
+        logger.info("Plotting sawtooth debug graph...")
+
+        df_plot = self.final_df.copy()
+
+        # Limit to a reasonable number of days for clarity, e.g., the first 5 days
+        start_date = df_plot.index.min()
+        end_date = start_date + pd.Timedelta(days=5)
+        df_plot = df_plot.loc[start_date:end_date]
+
+        if df_plot.empty:
+            return
+
+        with plt.style.context('default'):
+            # An _plot_results angepasste Größe
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+            # An _plot_results angepasste Farbe und Transparenz (tab:blue, alpha=0.7)
+            ax.plot(df_plot.index, df_plot['mef_t_MWh'], label='Smoothed MEF (t/MWh)', color='tab:blue', alpha=0.7,
+                    linewidth=1.5)
+
+            # Draw vertical lines at the start of each new window application
+            for i in window_indices:
+                if i > 0:
+                    boundary_ts = self.prep_df.index[i]
+                    if start_date <= boundary_ts <= end_date:
+                        # Dezentere Trennlinien passend zum Style
+                        ax.axvline(boundary_ts, color='tab:red', linestyle='--', linewidth=1.0, alpha=0.5,
+                                   label='Model Switch' if i == self.step_size else "")
+
+            ax.set_title(f'Smoothed MEF vs. Model Application Boundaries for {self.tso} ({self.year})')
+            ax.set_xlabel('Time')
+            ax.set_ylabel('MEF (t CO₂ / MWh)')
+
+            # Avoid duplicate labels in legend
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles))
+            ax.legend(by_label.values(), by_label.keys())
+
+            ax.grid(True, alpha=0.3)
+            fig.autofmt_xdate(rotation=45)
+
+            plt.tight_layout()
+
+            save_dir = self._get_save_dir()
+            plot_filename = save_dir / "sawtooth_debug_profile_smoothed.png"
+            try:
+                # facecolor='white' verhindert Darstellungsfehler im IDE Dark-Mode
+                fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+                logger.info(f"Saved sawtooth debug plot to {plot_filename}")
+            except Exception as e:
+                logger.error(f"Failed to save sawtooth debug plot: {e}")
+            plt.close(fig)
+
+    def _plot_avg_daily_profile(self):
+        """
+        Calculates and plots the average daily profile of the MEF.
+        """
+        if self.final_df is None or 'mef_t_MWh' not in self.final_df.columns:
+            logger.warning("Final DataFrame with MEF not available for daily profile plot.")
+            return
+
+        logger.info("Plotting average daily MEF profile...")
+
+        # 1. Group by time of day and calculate the mean
+        daily_avg_15min = self.final_df.groupby(self.final_df.index.time)['mef_t_MWh'].mean()
+
+        # 2. Create a dummy date index for plotting
+        dummy_day = pd.date_range(start='2024-01-01', periods=len(daily_avg_15min), freq='15min')
+        daily_avg_15min.index = dummy_day
+
+        with plt.style.context('default'):
+            # 3. Create the plot (angepasste Größe)
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+            # An _plot_results angepasste Farbe und Transparenz
+            ax.plot(daily_avg_15min.index, daily_avg_15min.values, color='tab:blue', alpha=0.7, linewidth=1.5,
+                    label='Ø MEF (15 min)')
+
+            # 4. Format the x-axis
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            ax.set_xlim(dummy_day[0], dummy_day[-1])
+
+            # 5. Labels and layout
+            ax.set_title(f'Durchschnittliches Tagesprofil des MEF ({self.tso}, {self.year})')
+            ax.set_xlabel('Uhrzeit')
+            ax.set_ylabel('MEF (t CO₂ / MWh)')
+
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            fig.autofmt_xdate(rotation=45)
+
+            plt.tight_layout()
+
+            # 6. Save the figure
+            save_dir = self._get_save_dir()
+            plot_filename = save_dir / "mef_avg_daily_profile.png"
+            try:
+                # facecolor='white' verhindert Darstellungsfehler im IDE Dark-Mode
+                fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+                logger.info(f"Saved average daily profile plot to {plot_filename}")
+            except Exception as e:
+                logger.error(f"Failed to save average daily profile plot: {e}")
+            plt.close(fig)
 
     @staticmethod
     def _json_converter(obj):

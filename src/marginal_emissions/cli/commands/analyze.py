@@ -9,6 +9,10 @@ import os
 from marginal_emissions import logger
 from marginal_emissions.core.msar import MSARAnalyzer
 
+# Constants from the MSAR model
+WINDOW_SIZE = 672
+STEP_SIZE = 32
+
 def _get_analysis_files(operator, year):
     """Finds analysis files based on operator and year."""
     base_path = here() / "data" / "processed"
@@ -31,24 +35,34 @@ def _get_analysis_files(operator, year):
         
     return files_to_process
 
-def _run_analysis(file_path, is_test, test_rows):
+def _run_analysis(file_path, is_test, num_iterations):
     """Runs the MSAR analysis for a single file."""
     try:
         tso, year = file_path.stem.split('_')[1:3]
         logger.info(f"Starting analysis for {tso.capitalize()} in {year}")
 
-        df = pd.read_csv(file_path, index_col='datetime', parse_dates=True)
-        
+        rows_to_load = None
         if is_test:
-            logger.info(f"PERFORMING TEST RUN with {test_rows} rows.")
-            df = df.head(test_rows)
+            # Calculate the number of rows needed to perform the requested number of iterations
+            rows_to_load = WINDOW_SIZE + (num_iterations - 1) * STEP_SIZE
+            logger.info(f"PERFORMING TEST RUN with {num_iterations} iterations, loading {rows_to_load} rows.")
+
+        df = pd.read_csv(file_path, index_col='datetime', parse_dates=True, nrows=rows_to_load)
+        
+        # Additional check to ensure enough data was loaded
+        if is_test and len(df) < rows_to_load:
+            logger.warning(f"Not enough data in {file_path.name} to perform {num_iterations} iterations. "
+                           f"File has {len(df)} rows, but {rows_to_load} are needed.")
+            return
+
 
         analyzer = MSARAnalyzer(
             data=df,
             tso=tso.capitalize(),
             year=year,
             test=is_test,
-            test_rows=test_rows if is_test else None
+            test_rows=rows_to_load if is_test else None,
+            num_iterations=num_iterations if is_test else None
         )
         
         analyzer.prepare()
@@ -91,16 +105,16 @@ def analysis_group():
     help='Flag to indicate a test run.'
 )
 @click.option(
-    '--test-rows',
-    type=click.IntRange(100, 1000),
-    default=1000,
-    help='Number of rows to use for the test run (e.g., 100 or 1000).'
+    '--num-iterations',
+    type=click.IntRange(min=1),
+    default=50,
+    help='Number of sliding window iterations for the test run.'
 )
-def run_analysis_command(operator, year, is_test, test_rows):
-    """Run the MSAR analysis based on selected operator and year."""
+def run_analysis_command(operator, year, is_test, num_iterations):
+    """Run the MSAR analysis based on the selected operator and year."""
     files_to_process = _get_analysis_files(operator, year)
     if not files_to_process:
         return
-    
+
     for file_path in files_to_process:
-        _run_analysis(file_path, is_test, test_rows)
+        _run_analysis(file_path, is_test, num_iterations)

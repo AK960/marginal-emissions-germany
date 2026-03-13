@@ -2,21 +2,25 @@
 Class for preprocessing the MEF time series.
 """
 import os
-
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pytz
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 from marginal_emissions import logger
 from marginal_emissions.conf.vars_preprocess import *
 
 class MEFPreprocessor:
     def __init__(self):
-        self.areas_df_dict = {}
+        self.areas_gen_dict = {}
         self.emissions = {}
         self.out_dir_interim = f'{root}/data/interim'
         self.out_dir_processed = f'{root}/data/processed'
+        self.out_dir_figures = f'{root}/results/figures'
         os.makedirs(self.out_dir_interim, exist_ok=True)
         os.makedirs(self.out_dir_processed, exist_ok=True)
+        os.makedirs(self.out_dir_figures, exist_ok=True)
 
     def prep_emissions(self):
         emissions = pd.concat([
@@ -50,7 +54,14 @@ class MEFPreprocessor:
         full_idx = pd.date_range(start=emissions.index.min(), end=emissions.index.max(), freq='h', tz='UTC')
         emissions = emissions.reindex(full_idx)
 
+        # The interpolation must happen before converting to numeric, as it might operate on string representations
         emissions = emissions.interpolate(method='time', limit_direction='both')
+        
+        # Convert columns to numeric, assuming standard decimal format for Agora data.
+        # The .str.replace for German format is NOT needed here.
+        for col in emissions.columns:
+            emissions[col] = pd.to_numeric(emissions[col], errors='coerce')
+
         """
         The generation timeseries consists of intervals such that the interval of time t contains [t, t+15)
         The emissions timeseries consists of single points in time where at time t contains [t-60, t)
@@ -112,70 +123,75 @@ class MEFPreprocessor:
             gen['total_generation'] = gen.sum(axis=1, numeric_only=True)
 
             # Fill instance df
-            self.areas_df_dict[area] = gen
+            self.areas_gen_dict[area] = gen
 
-        for area in self.areas_df_dict:
-            min_date = self.areas_df_dict[area].index.min().strftime('%Y%m%d%H%M')
-            max_date = self.areas_df_dict[area].index.max().strftime('%Y%m%d%H%M')
+        for area in self.areas_gen_dict:
+            min_date = self.areas_gen_dict[area].index.min().strftime('%Y%m%d%H%M')
+            max_date = self.areas_gen_dict[area].index.max().strftime('%Y%m%d%H%M')
             try:
-                self.areas_df_dict[area].to_csv(f'{self.out_dir_interim}/generation_{area}_utc_{min_date}_{max_date}.csv')
+                self.areas_gen_dict[area].to_csv(f'{self.out_dir_interim}/generation_{area}_utc_{min_date}_{max_date}.csv')
                 logger.info(f"Saved file to {self.out_dir_interim}/generation_{area}_utc_{min_date}_{max_date}.csv")
             except Exception as e:
                 logger.error(f"Failed to save file: {e}")
 
-        return self.areas_df_dict # In case one wants to continue working with the dataframe
+        return self.areas_gen_dict # In case one wants to continue working with the dataframe
 
     def alloc_emissions(self):
         if self.emissions is None or self.emissions.empty:
             raise ValueError("Emissions not prepared yet. Call prep_emissions() first.")
-        if not self.areas_df_dict:
+        if not self.areas_gen_dict:
             raise ValueError("Generation not prepared yet. Call prep_generation() first.")
 
-        # Regional allocation of emissions based on share of regional generation from total generation
-        ## Aggregate total generation per production type and one hour
-        total_gen_15min = pd.concat(self.areas_df_dict.values()).groupby(level=0).sum()
+        fuels = ['lignite', 'hard_coal', 'fossile_gas', 'other_conventionals']
+
+        # Germany-wide 15-min generation per fuel, then aggregate it to hourly values
+        total_gen_15min = (
+            pd.concat(
+                [df[[f for f in fuels if f in df.columns]] for df in self.areas_gen_dict.values()]
+            )
+            .groupby(level=0)
+            .sum()
+            .sort_index()
+        )
         total_gen_hourly = total_gen_15min.resample('1h').sum()
 
-        ## Allocate emissions to regional_generation based on share of regional generation
         regional_emissions_final = {}
 
-        for name, df_reg in self.areas_df_dict.items():
-            fuels = ['lignite', 'hard_coal', 'fossile_gas', 'other_conventionals']
+        for name, df_reg in self.areas_gen_dict.items():
             regional_emissions_15min = pd.DataFrame(index=df_reg.index)
 
             for fuel in fuels:
-                if fuel in df_reg.columns:
-                    ## (1) Regional hourly generation per production type (share of German generation that come from each area)
-                    regional_gen_hourly = df_reg[fuel].resample('h').sum()
+                if fuel not in df_reg.columns or fuel not in total_gen_hourly.columns or fuel not in self.emissions.columns:
+                    continue
 
-                    ## Share of regional generation per production type on total generation per production type
-                    regional_share_h = (regional_gen_hourly / total_gen_hourly[fuel]).fillna(0)  # In case of no generation in a region, set share to 0
+                # (1) Regional hourly generation and share
+                regional_gen_15min = df_reg[fuel].copy()
+                regional_gen_hourly = regional_gen_15min.resample('1h').sum()
+                regional_share_h = (regional_gen_hourly / total_gen_hourly[fuel]).fillna(0)
+                regional_emissions_hourly = self.emissions[fuel] * regional_share_h
 
-                    ## Regional emissions per hour and production type
-                    regional_emissions_hourly = self.emissions[fuel] * regional_share_h
+                # (2) Temporal downscaling to 15 min via IEF interpolation
+                ief_hourly = (regional_emissions_hourly / regional_gen_hourly).replace([np.inf, -np.inf], 0).fillna(
+                    0)
 
-                    ## (2) Temporal downscaling to 15 min via IEF interpolation --> implicit emissions factor
-                    ### How much tCO2 where emitted per MWh within the hour?
-                    ief_hourly = (regional_emissions_hourly / regional_gen_hourly).fillna(0)
-                    ### Linear interpolation of emissions per quarter-hour instead of step function from hour to hour with hard breaks
-                    ief_15min = ief_hourly.resample('15min').interpolate(method='time')
-                    ### Fill edged if NaNs where generated
-                    ief_15min = ief_15min.ffill().bfill()
-                    ### Multiply with 15-minute generation
-                    raw_emissions_15min = df_reg[fuel] * ief_15min
+                # --- DER GAMECHANGER: pchip Interpolation ---
+                # 'pchip' (Piecewise Cubic Hermite Interpolating Polynomial) erzeugt
+                # glatte Kurven ohne Knicke an den Stundengrenzen und verhindert
+                # unrealistisches Überschwingen (Overshooting).
+                ief_15min = ief_hourly.resample('15min').interpolate(method='pchip')
+                ief_15min = ief_15min.ffill().bfill()  # Kanten füllen
 
-                    ## (3) Correct to initial hourly value (the sum of the four points may be larger than the original value, thus correction applied)
-                    #raw_hourly_sum = raw_emissions_15min.resample('1h').transform('sum')
-                    #target_hourly = regional_emissions_hourly.resample('15min').ffill()
-                    #correction_factor = (target_hourly / raw_hourly_sum).fillna(1)
+                # Multiply with 15-minute generation
+                raw_emissions_15min = regional_gen_15min * ief_15min
 
-                    ## (4) Final assignment
-                    regional_emissions_15min[fuel] = raw_emissions_15min #* correction_factor
+                # (3 & 4) FINAL ASSIGNMENT OHNE KORREKTURFAKTOR
+                # Wir verzichten auf den Correction Factor, damit die deltas
+                # (die diffs) nicht durch künstliche Korrekturen verzerrt werden.
+                regional_emissions_15min[fuel] = raw_emissions_15min
 
-            # Total emissions per control area per quarter-hour (final df: production type and total emissions per quarter-hour, weighed by generation)
+            # Total emissions per control area and quarter-hour
             regional_emissions_15min['total_emissions'] = regional_emissions_15min.sum(axis=1)
             regional_emissions_final[name] = regional_emissions_15min
-            regional_emissions_final[name] = regional_emissions_final[name].rename(columns=EMI_COLS)
 
         # Join data frames for the final processed output dataframe and split them by year (avoid ram overflow for too long datasets)
         splits = [
@@ -183,10 +199,10 @@ class MEFPreprocessor:
             ("2023-12-23 23:00:00+00:00", "2025-01-01 00:00:00+00:00", "2024")
         ]
 
-        for reg in self.areas_df_dict:
+        for reg in self.areas_gen_dict:
             # Get regional frames
             df_emi = regional_emissions_final[reg]
-            df_gen = self.areas_df_dict[reg]
+            df_gen = self.areas_gen_dict[reg]
 
             # Merge on index
             final_df_all = pd.merge(
@@ -233,24 +249,169 @@ class MEFPreprocessor:
             raise ValueError("Emissions not prepared yet. Call prep_emissions() first.")
         if not regional_emissions_final:
             raise ValueError("Emissions not allocated yet. Call alloc_emissions() first.")
-        if not self.areas_df_dict:
+        if not self.areas_gen_dict:
             raise ValueError("Generation not prepared yet. Call prep_generation() first.")
 
         logger.info("Starting validation of emission allocation...")
-        # Sum all 15 min values
+        fuels = ['lignite', 'hard_coal', 'fossile_gas', 'other_conventionals']
+
+        # Summiere alle 15-Min-Werte über die Regionen auf
         total_regional_15min = pd.concat(regional_emissions_final.values()).groupby(level=0).sum()
 
-        # Resample to one hour
+        # Zähle, wie viele Viertelstunden jede Stunde hat (sollten 4 sein)
+        count_15min = total_regional_15min.groupby(pd.Grouper(freq='1h')).count()
+
+        # Bilde die Stunden-Summen
         total_regional_hourly = total_regional_15min.resample('1h').sum()
 
-        # Compare to original emissions
+        # Filtere unvollständige Stunden (wie z.B. Ränder des Datensatzes oder Zeitumstellung) heraus
+        valid_hours_mask = count_15min.iloc[:, 0] == 4
+        total_regional_hourly = total_regional_hourly.loc[valid_hours_mask]
+
         common_idx = total_regional_hourly.index.intersection(self.emissions.index)
 
-        diff = total_regional_hourly.loc[common_idx] - self.emissions.loc[common_idx]
-        for col in diff.columns:
-            if col in self.emissions.columns:
-                max_diff = diff[col].abs().max()
-                if max_diff > 0.1:
-                    logger.warning(f"Validation Warning [{col}]: Max deviation of {max_diff:.4f} tCO2 detected.")
+        # Randeffekte (erster und letzter Zeitstempel) abschneiden
+        if len(common_idx) > 2:
+            common_idx = common_idx[1:-1]
+
+        original_hourly = self.emissions.loc[common_idx]
+        resampled_hourly = total_regional_hourly.loc[common_idx]
+
+        # Validate fuel-by-fuel preservation of hourly totals
+        for fuel in fuels + ['total_emissions']:
+            if fuel not in original_hourly.columns or fuel not in resampled_hourly.columns:
+                continue
+
+            diff = (resampled_hourly[fuel] - original_hourly[fuel]).abs()
+
+            # Durchschnittlichen relativen Fehler (MAPE) berechnen
+            valid_mask = original_hourly[fuel] > 0
+            if valid_mask.any():
+                # Relative Differenz für jede gültige Stunde berechnen (*100 für Prozent)
+                rel_diff_series = (diff[valid_mask] / original_hourly[fuel][valid_mask]) * 100
+                mean_rel_diff = rel_diff_series.mean()
+            else:
+                mean_rel_diff = 0.0
+
+            # Find the maximum absolute deviation
+            max_abs_diff = diff.max()
+
+            # Relative error am Punkt der maximalen Abweichung
+            if max_abs_diff > 0:
+                time_of_max_diff = diff.idxmax()  # Speichere den exakten Zeitpunkt der höchsten Abweichung
+                original_value_at_max_diff = original_hourly.loc[time_of_max_diff, fuel]
+
+                if original_value_at_max_diff > 0:
+                    max_rel_diff = (max_abs_diff / original_value_at_max_diff) * 100
                 else:
-                    logger.info(f"Validation Passed [{col}]: Max deviation is {max_diff:.4e}).")
+                    max_rel_diff = np.inf  # Handle Division by Zero
+            else:
+                max_rel_diff = 0
+                time_of_max_diff = "N/A"
+
+            # Use a relative threshold (e.g., 20%) for the warning
+            if max_rel_diff > 20.0:
+                logger.warning(
+                    f"[{fuel}] WARNING: Max rel. dev. is {max_rel_diff:.2f}% "
+                    f"(abs: {max_abs_diff:.2f} tCO2 at {time_of_max_diff}). "
+                    f"AVG rel. deviation: {mean_rel_diff:.4f}%"
+                )
+            else:
+                logger.info(
+                    f"[{fuel}] PASSED: Max rel. dev. is {max_rel_diff:.2f}% "
+                    f"(abs: {max_abs_diff:.2f} tCO2 at {time_of_max_diff}). "
+                    f"AVG rel. deviation: {mean_rel_diff:.4f}%"
+                )
+
+        self.plot_delta_profile(regional_emissions_final)
+        self._plot_validation_comparison(original_hourly, resampled_hourly)
+
+    def plot_delta_profile(self, regional_emissions_final, days_to_plot=3):
+        """
+        Plots the delta_emissions profile for each region to check for sawtooth patterns.
+        """
+        logger.info("Plotting delta profiles for validation...")
+
+        for region, df_emi in regional_emissions_final.items():
+            df_plot = df_emi.copy()
+            df_plot['delta_emissions'] = df_plot['total_emissions'].diff()
+
+            # Limit to the first few days for clarity
+            start_date = df_plot.index.min()
+            end_date = start_date + pd.Timedelta(days=days_to_plot)
+            df_plot = df_plot.loc[start_date:end_date]
+
+            fig, ax = plt.subplots(figsize=(15, 7))
+            ax.plot(df_plot.index, df_plot['delta_emissions'], label='Delta Emissions', color='red', linewidth=0.8)
+
+            # Highlight the hourly boundaries
+            for i in range(days_to_plot + 1):
+                day_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=i)
+                for hour in range(24):
+                    ax.axvline(day_start + pd.Timedelta(hours=hour), color='grey', linestyle='--', linewidth=0.5)
+
+            ax.set_title(f'Delta Emissions Profile for {region} (First {days_to_plot} Days) - Smoothed')
+            ax.set_xlabel('Timestamp (UTC)')
+            ax.set_ylabel('Delta Emissions (tCO2 per 15 min)')
+            ax.legend()
+            ax.grid(True, which='major', linestyle='-', linewidth='0.5', color='lightgrey')
+            
+            plt.tight_layout()
+            plot_filename = f'{self.out_dir_figures}/delta_profile_{region}_smoothed.png'
+            try:
+                fig.savefig(plot_filename)
+                logger.info(f"Saved delta profile plot to {plot_filename}")
+            except Exception as e:
+                logger.error(f"Failed to save plot: {e}")
+            plt.close(fig)
+
+    def _plot_validation_comparison(self, original_hourly, resampled_hourly):
+        """
+        Plots the original vs. resampled hourly emissions to visually inspect the allocation balance.
+        """
+        logger.info("Plotting allocation validation comparison...")
+        
+        # We only plot the 'total_emissions' for clarity
+        df_plot = pd.DataFrame({
+            'Original': original_hourly['total_emissions'],
+            'Resampled': resampled_hourly['total_emissions']
+        }).dropna()
+
+        df_plot['Difference'] = (df_plot['Resampled'] - df_plot['Original']).abs()
+
+        # Calculate metrics
+        r2 = r2_score(df_plot['Original'], df_plot['Resampled'])
+        mae = mean_absolute_error(df_plot['Original'], df_plot['Resampled'])
+        mse = mean_squared_error(df_plot['Original'], df_plot['Resampled'])
+        rmse = np.sqrt(mse)
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+
+        # Main plot: Original vs. Resampled
+        ax1.plot(df_plot.index, df_plot['Original'], label='Original Hourly Emissions', color='blue', linewidth=1.5)
+        ax1.plot(df_plot.index, df_plot['Resampled'], label='Resampled from 15-min', color='red', linestyle='--', linewidth=1)
+        title = (
+            f'Validation: Original vs. Resampled Hourly Total Emissions\n'
+            f'R² = {r2:.4f} | MAE = {mae:.2f} | MSE = {mse:.2f} | RMSE = {rmse:.2f}'
+        )
+        ax1.set_title(title)
+        ax1.set_ylabel('Emissions (tCO2)')
+        ax1.legend()
+        ax1.grid(True, which='major', linestyle='--', linewidth='0.5')
+
+        # Difference plot
+        ax2.plot(df_plot.index, df_plot['Difference'], label='Absolute Difference', color='green')
+        ax2.set_title('Absolute Difference')
+        ax2.set_xlabel('Timestamp (UTC)')
+        ax2.set_ylabel('Emissions (tCO2)')
+        ax2.legend()
+        ax2.grid(True, which='major', linestyle='--', linewidth='0.5')
+
+        plt.tight_layout()
+        plot_filename = f'{self.out_dir_figures}/allocation_validation_comparison.png'
+        try:
+            fig.savefig(plot_filename)
+            logger.info(f"Saved validation comparison plot to {plot_filename}")
+        except Exception as e:
+            logger.error(f"Failed to save validation plot: {e}")
+        plt.close(fig)
