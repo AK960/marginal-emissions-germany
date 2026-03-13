@@ -145,7 +145,7 @@ class MEFPreprocessor:
 
             for fuel in fuels:
                 if fuel in df_reg.columns:
-                    ## (1) Regional hourly generation per production type (share of german generation that come from each area)
+                    ## (1) Regional hourly generation per production type (share of German generation that come from each area)
                     regional_gen_hourly = df_reg[fuel].resample('h').sum()
 
                     ## Share of regional generation per production type on total generation per production type
@@ -165,12 +165,12 @@ class MEFPreprocessor:
                     raw_emissions_15min = df_reg[fuel] * ief_15min
 
                     ## (3) Correct to initial hourly value (the sum of the four points may be larger than the original value, thus correction applied)
-                    raw_hourly_sum = raw_emissions_15min.resample('1h').transform('sum')
-                    target_hourly = regional_emissions_hourly.resample('15min').ffill()
-                    correction_factor = (target_hourly / raw_hourly_sum).fillna(1)
+                    #raw_hourly_sum = raw_emissions_15min.resample('1h').transform('sum')
+                    #target_hourly = regional_emissions_hourly.resample('15min').ffill()
+                    #correction_factor = (target_hourly / raw_hourly_sum).fillna(1)
 
                     ## (4) Final assignment
-                    regional_emissions_15min[fuel] = (raw_emissions_15min * correction_factor)
+                    regional_emissions_15min[fuel] = raw_emissions_15min #* correction_factor
 
             # Total emissions per control area per quarter-hour (final df: production type and total emissions per quarter-hour, weighed by generation)
             regional_emissions_15min['total_emissions'] = regional_emissions_15min.sum(axis=1)

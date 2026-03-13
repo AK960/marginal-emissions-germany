@@ -42,7 +42,8 @@ class MSARAnalyzer:
         step_size = 32, # Move window by for 8 hours
         param_grid = None,
         n_jobs = -1,
-        test = True,
+        test = False,
+        test_rows = None,
         run:str = "msar"
     ):
         """
@@ -57,6 +58,7 @@ class MSARAnalyzer:
         self.tso = tso
         self.year = year
         self.test = test
+        self.test_rows = test_rows
         self.run = run # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
@@ -65,6 +67,7 @@ class MSARAnalyzer:
         self.df = data # Contains original data
         ## Params
         self.window_length = window_length
+        self.step_size = step_size
         self.n_jobs = n_jobs
         self.lags = lags
         self.param_grid = param_grid if param_grid is not None else {
@@ -135,15 +138,21 @@ class MSARAnalyzer:
         if self.prep_df.empty:
             raise ValueError("Data not prepared yet. Call prepare() first.")
 
+        # In case the last increment does not perfectly align with the length of the dataset (avoids data loss at the tail)
+        max_idx = len(self.prep_df) - self.window_length
+        window_indices = list(range(0, max_idx + 1, self.step_size))
+        if window_indices[-1] != max_idx:
+            window_indices.append(max_idx)
+
         logger.info(f"Fitting model and computing MEF for {len(self.prep_df) - self.window_length + 1} observations...")
         try:
             # Parallel execution with a progress bar
             results = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._process_window)(i=i, prep_data=self.prep_df)
-                for i in tqdm(range(len(self.prep_df) - self.window_length + 1), desc=f"Analyzing {self.tso}")
+                for i in tqdm(window_indices, desc=f"Analyzing {self.tso}")
             )
 
-            valid_results = [r for r in results if r is not None]
+            valid_results = [item for sublist in results if sublist is not None for item in sublist]
 
             if valid_results:
                 self.final_df = pd.DataFrame([r['data'] for r in valid_results]).set_index('timestamp').sort_index()
@@ -152,6 +161,8 @@ class MSARAnalyzer:
                 all_coeffs_list = [r['coeffs'] for r in valid_results]
                 self.coeffs_df = pd.concat(all_coeffs_list, ignore_index=True)
                 self.coeffs_df.set_index(['timestamp', 'parameter'], inplace=True)
+                
+                self._plot_results()
             else:
                 logger.warning("No valid models were fitted across the entire dataset.")
                 self.final_df = pd.DataFrame()
@@ -175,63 +186,55 @@ class MSARAnalyzer:
         timestamp = current_window.index[-1]   # timestamp of the last observation of the window:
                                                # mef and estimated_emissions are computed for this observation
 
-        # Model selection params
         best_converged = False
         best_model = None
-        # best_mae = np.inf
         best_aic = np.inf
 
         # (1) Determine the best model for each window and store it in best_model
         for params in ParameterGrid(self.param_grid):
-            # result contains the returned model object
-            # result, mae = self._fit_markov_model(current_window, params) # Model selection based on MAE
-            result, aic = self._fit_markov_model(current_window, params) # Model selection based on AIC
+            result, aic = self._fit_markov_model(current_window, params)
 
             if result is None:
                 continue
 
-            # Check if the model converged
             is_converged = result.mle_retvals['converged']
 
-            ## Select model based on AIC
-            # Case 1: No best model yet
             if best_model is None:
                 best_model = result
                 best_aic = aic
                 best_converged = is_converged
-
-            # Case 2: The new model converged, the old did not -> Take converged one
             elif is_converged and not best_converged:
                 best_model = result
                 best_aic = aic
                 best_converged = True
-
-            # Case 3: Both converged / did not converge -> Take the one with better aic
             elif is_converged == best_converged:
                 if aic < best_aic:
                     best_model = result
                     best_aic = aic
 
-        # (2) Compute MEF with best_model by passing it to _compute_mef()
         if best_model is not None:
-            pred_data = self._predict_emissions(model=best_model, timestamp=timestamp)
-            mef_data = self._compute_mef(model=best_model, timestamp=timestamp)
-            indicator_data, coeff_table = self._save_indicators(model=best_model, timestamp=timestamp)
+            window_results = []
+            # Timestamps of the last self.step_size intervals (default 32)
+            target_timestamps = current_window.index[-self.step_size:]
 
-            # Making sure potential NaN values don't crash the unpacking
-            pred_data = pred_data if pred_data else {}
-            mef_data = mef_data if mef_data else {}
+            for ts in target_timestamps:
+                pred_data = self._predict_emissions(model=best_model, timestamp=ts)
+                mef_data = self._compute_mef(model=best_model, timestamp=ts)
+                indicator_data, coeff_table = self._save_indicators(model=best_model, timestamp=ts)
 
-            res_row = {
-                'timestamp': timestamp,
-                'delta_generation': current_window['delta_generation'].iloc[-1],
-                'delta_emissions': current_window['delta_emissions'].iloc[-1],
-                **pred_data,
-                **mef_data
-            }
+                pred_data = pred_data if pred_data else {}
+                mef_data = mef_data if mef_data else {}
 
-            return {'data': res_row, 'indicator': indicator_data, 'coeffs': coeff_table}
+                res_row = {
+                    'timestamp': ts,
+                    'delta_generation': current_window.loc[ts, 'delta_generation'],
+                    'delta_emissions': current_window.loc[ts, 'delta_emissions'],
+                    **pred_data,
+                    **mef_data
+                }
+                window_results.append({'data': res_row, 'indicator': indicator_data, 'coeffs': coeff_table})
 
+            return window_results  # Return the list with self.step_size tuples
         else:
             logger.error(f"Failed to fit model for {timestamp}. Model is None.")
             return None
@@ -249,21 +252,14 @@ class MSARAnalyzer:
 
         tvtp_cols = ['tvtp_const', 'tvtp_phase2', 'tvtp_phase3', 'tvtp_phase4']
         has_tvtp = all(col in window_data.columns for col in tvtp_cols)
-
-        if has_tvtp:
-            tvtp_df = window_data[tvtp_cols].copy()
-        else:
-            tvtp_df = None
+        tvtp_df = window_data[tvtp_cols].copy() if has_tvtp else None
 
         if self.lags > 0:
             for i in range(1, self.lags + 1):
                 exog[f'ar_lag_{i}'] = endog.shift(i)
-
             valid_idx = exog.dropna().index
-
             endog = endog.loc[valid_idx]
             exog = exog.loc[valid_idx]
-
             if has_tvtp:
                 tvtp_df = tvtp_df.loc[valid_idx]
 
@@ -285,7 +281,6 @@ class MSARAnalyzer:
             msdr_result = msdr_model.fit(disp=False)
 
             return msdr_result, msdr_result.aic
-
         except Exception as e:
             logger.error(f"Model fitting failed with error: {e}")
             return None, np.inf
@@ -300,7 +295,8 @@ class MSARAnalyzer:
 
             # Get in-sample estimation of the model for the entire window to save computation time compared to another predict
             fitted_values = model.fittedvalues
-            estimated_val = fitted_values.iloc[-1]
+            #estimated_val = fitted_values.iloc[-1] # For step size 1
+            estimated_val = fitted_values.loc[timestamp]
 
             return {'delta_estimated_emissions': float(estimated_val)}
         else:
@@ -316,7 +312,8 @@ class MSARAnalyzer:
 
             # For extracting coeffs and iterating
             params = model.params.to_dict()
-            smoothed_probs = model.smoothed_marginal_probabilities.iloc[-1].to_dict()
+            #smoothed_probs = model.smoothed_marginal_probabilities.iloc[-1].to_dict() # For step size 1
+            smoothed_probs = model.smoothed_marginal_probabilities.loc[timestamp].to_dict()
 
             # 1. Find Intercepts
             intercepts = {}
@@ -377,7 +374,7 @@ class MSARAnalyzer:
 
     def _inverse_transform_coeffs(self, mef_scaled, icpt_scaled):
         """
-        Function to transform scaled data back to the original scale for evaluation.
+        Transforms scaled coefficients back to the original scale.
         """
         logger.debug("Inverse transforming coefficients to get absolute MEF...")
 
@@ -423,7 +420,8 @@ class MSARAnalyzer:
             indicator_row = {
                 'timestamp': timestamp,
                 'k_regimes': int(model._results.k_regimes),
-                'smoothed_probs': model.smoothed_marginal_probabilities.iloc[-1].to_dict(),
+                #'smoothed_probs': model.smoothed_marginal_probabilities.iloc[-1].to_dict(), # For step size 1
+                'smoothed_probs': model.smoothed_marginal_probabilities.loc[timestamp].to_dict(),
                 'aic': float(model.aic),  # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
                 'bic': float(model.bic),
                 'hqic': float(model.hqic),
@@ -437,19 +435,23 @@ class MSARAnalyzer:
             return None, None
 
     # ---------- Data & File handling ----------#
+    def _get_save_dir(self):
+        """Constructs the save directory based on instance attributes."""
+        if self.test:
+            return self.root / "results" / "test" / f"{self.run}" / f"{self.tso}_{self.year}_{self.test_rows}"
+        else:
+            return self.root / "results" / f"{self.run}" / f"{self.tso}" / f"{self.year}"
+
     def save_to_file(self, data, filename):
         """
-        Saves a dataframe to a file.
+        Saves a dataframe to a file in the appropriate directory.
         :param data: Dataframe to save
         :param filename: Filename
         """
-        ext = Path(filename).suffix.lower().lstrip('.')
-        if self.test:
-            save_dir = self.root / "results" / f"test_{self.run}"
-        else:
-            save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}"
+        save_dir = self._get_save_dir()
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
+        ext = Path(filename).suffix.lower().lstrip('.')
 
         match ext:
             case "csv":
@@ -465,6 +467,57 @@ class MSARAnalyzer:
                         logger.info(f"Summary data saved to {filepath}")
                 except Exception as e:
                     logger.error(f"Failed to save summary data to json: {e}")
+
+    def _plot_results(self):
+        """
+        Plots the estimated vs. original emissions and calculates performance metrics.
+        Saves the plot as a PNG file.
+        """
+        df_plot = self.final_df[['delta_emissions', 'delta_estimated_emissions']].copy()
+        df_plot.index = pd.to_datetime(df_plot.index, format="ISO8601")
+
+        # Calculate metrics before interpolation for validity
+        df_metrics = df_plot.dropna()
+        if df_metrics.empty:
+            logger.error("No valid data points for plotting.")
+            return
+
+        r2 = r2_score(df_metrics['delta_emissions'], df_metrics['delta_estimated_emissions'])
+        mae = mean_absolute_error(df_metrics['delta_emissions'], df_metrics['delta_estimated_emissions'])
+        mse = mean_squared_error(df_metrics['delta_emissions'], df_metrics['delta_estimated_emissions'])
+        rmse = np.sqrt(mse)
+
+        # Interpolate by time for complete plot
+        if df_plot.isnull().values.any():
+            logger.info("Interpolating missing values for plot.")
+            df_plot = df_plot.interpolate(method='time').dropna()
+
+        if df_plot.empty:
+            logger.error("No valid data points for plotting after interpolation.")
+            return
+
+        with plt.style.context('default'):
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(df_plot.index, df_plot['delta_estimated_emissions'], label='Estimated Emissions', alpha=0.7, color='tab:blue')
+            ax.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions', alpha=0.7, linestyle='--', color='tab:orange')
+            ax.set_title(f"{self.tso} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+            ax.set_ylabel("Emissions (Scaled)")
+            ax.set_xlabel("Time")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            fig.autofmt_xdate(rotation=45)
+
+            save_dir = self._get_save_dir()
+            os.makedirs(save_dir, exist_ok=True)
+            filename = save_dir / "estimated_emissions.png"
+            
+            try:
+                fig.savefig(filename, bbox_inches='tight')
+                logger.info(f"Plot saved to {filename}")
+            except Exception as e:
+                logger.error(f"Failed to save image to file: {e}. Continuing...")
+            finally:
+                plt.close(fig)
 
     @staticmethod
     def _json_converter(obj):

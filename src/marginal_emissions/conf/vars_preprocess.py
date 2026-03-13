@@ -23,7 +23,7 @@ EMI_COLS = {
 }
 
 GEN_DICT = {
-    'f_hertz': pd.read_csv(
+    '50hertz': pd.read_csv(
         f'{root}/data/raw/Realisierte_Erzeugung_50Hertz_202212240000_202501020000_Viertelstunde.csv',
         sep=';'
     ),

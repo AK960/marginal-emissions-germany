@@ -1,143 +1,106 @@
 """
-CLI command for fetching data from an API.
+CLI command for running the MSAR analysis.
 """
-
 import click
-import re
+import pandas as pd
 from pyprojroot import here
+import os
 
 from marginal_emissions import logger
-from marginal_emissions.conf.vars_analyze import *
 from marginal_emissions.core.msar import MSARAnalyzer
-from marginal_emissions.utils.helper import *
+
+def _get_analysis_files(operator, year):
+    """Finds analysis files based on operator and year."""
+    base_path = here() / "data" / "processed"
+    all_files = [f for f in base_path.glob("*.csv")]
+    
+    files_to_process = []
+
+    operators = [operator] if operator.lower() != 'all' else ['50hertz', 'amprion', 'tennet', 'transnetbw']
+    years = [year] if year.lower() != 'all' else ['2023', '2024']
+
+    for op in operators:
+        for yr in years:
+            pattern = f"final_{op.lower()}_{yr}"
+            for f in all_files:
+                if pattern in f.name:
+                    files_to_process.append(f)
+    
+    if not files_to_process:
+        logger.warning(f"No files found for operator(s) {operators} and year(s) {years}.")
+        
+    return files_to_process
+
+def _run_analysis(file_path, is_test, test_rows):
+    """Runs the MSAR analysis for a single file."""
+    try:
+        tso, year = file_path.stem.split('_')[1:3]
+        logger.info(f"Starting analysis for {tso.capitalize()} in {year}")
+
+        df = pd.read_csv(file_path, index_col='datetime', parse_dates=True)
+        
+        if is_test:
+            logger.info(f"PERFORMING TEST RUN with {test_rows} rows.")
+            df = df.head(test_rows)
+
+        analyzer = MSARAnalyzer(
+            data=df,
+            tso=tso.capitalize(),
+            year=year,
+            test=is_test,
+            test_rows=test_rows if is_test else None
+        )
+        
+        analyzer.prepare()
+        analyzer.fit_compute()
+        
+        if analyzer.final_df is not None and not analyzer.final_df.empty:
+            analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
+            analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
+            analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
+        else:
+            logger.warning(f"No results generated for {tso.capitalize()} in {year}. Skipping file saving.")
+
+        logger.info(f"Finished analysis for {tso.capitalize()} in {year}")
+
+    except Exception as e:
+        logger.error(f"Analysis for {file_path.name} failed with error: {e}")
+
 
 @click.group(name='analysis')
 def analysis_group():
-    """
-    Run MSDR analysis for single or all dataframes
-    """
+    """Run MSAR analysis for single or all dataframes."""
     pass
 
 @analysis_group.command(name='run')
 @click.option(
     '--operator', '-tso',
-    type=click.Choice([
-        '50Hertz', 'Amprion', 'TenneT', 'TransnetBW', 'All'
-    ],
-    case_sensitive=False
-    ),
-    required=False,
+    type=click.Choice(['50Hertz', 'Amprion', 'TenneT', 'TransnetBW', 'All'], case_sensitive=False),
+    default='All',
     help='Select TSO for whose area to run analysis (not case sensitive).'
 )
 @click.option(
     '--year', '-y',
-    type=click.Choice([
-        '2023', '2024', 'all'
-    ],
-    case_sensitive=False
-    ),
-    required=False,
-    help='Select TSO for whose area to run analysis (not case sensitive).'
+    type=click.Choice(['2023', '2024', 'All'], case_sensitive=False),
+    default='All',
+    help='Select year for which to run analysis.'
 )
 @click.option(
     '--is-test', '-t',
     is_flag=True,
-    help='If set, analysis will be performed on shorter test_msdr dataset.'
+    help='Flag to indicate a test run.'
 )
-def set_data(
-        operator,
-        year,
-        is_test
-):
-    if is_test:
-        logger.info("PERFORMING TEST RUN")
-        _run_analysis(data=TEST_DF, is_test=True)
-    elif operator:
-        tso = operator.lower()
-        yr = year.lower() if year else 'all'
-
-        # Select data to run analysis on based on the dataframe input param
-        match tso:
-            case '50hertz':
-                if yr == 'all':
-                    _run_analysis(operator=tso, data=F_HERTZ)
-                else:
-                    _run_analysis(operator=tso, data={yr: F_HERTZ[yr]})
-            case 'amprion':
-                if yr == 'all':
-                    _run_analysis(operator=tso, data=AMPRION)
-                else:
-                    _run_analysis(operator=tso, data={yr: AMPRION[yr]})
-            case 'tennet':
-                if yr == 'all':
-                    _run_analysis(operator=tso, data=TENNET)
-                else:
-                    _run_analysis(operator=tso, data={yr: TENNET[yr]})
-            case 'transnetbw':
-                if yr == 'all':
-                    _run_analysis(operator=tso, data=TRANSNET_BW)
-                else:
-                    _run_analysis(operator=tso, data={yr: TRANSNET_BW[yr]})
-            case 'all':
-                if yr == 'all':
-                    for area, years_dict in ANALYSIS_DFS.items():
-                        _run_analysis(operator=area, data=years_dict)
-                else:
-                    for area, years_dict in ANALYSIS_DFS.items():
-                        _run_analysis(operator=area, data={yr: years_dict[yr]})
-            case _:
-                logger.error(f"Unknown argument '{tso}'. Run '--help' for more information.")
-
-    else:
-        logger.error("Must provide either -t or -tso and -y flag.")
-
-def _run_analysis(data, operator=None, is_test=False):
-    # Check last run for class initialization
-    if not is_test:
-        logger.info(f"Starting analysis for {operator}...")
-        if operator is None:
-            raise ValueError("Operator must be provided for non-test_msdr runs.")
-
-        for year, df in data.items():
-            # Run analysis
-            try:
-                logger.info(f"Starting analysis for {operator} in {year}")
-                analyzer = MSARAnalyzer(tso=operator, data=df, year=year, test=is_test)
-                analyzer.prepare()
-                analyzer.fit_compute()
-                analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
-                analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
-                analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
-                plot_over_time(
-                    data=analyzer.final_df,
-                    tso=operator,
-                    col1='delta_emissions',
-                    col2='delta_estimated_emissions',
-                    col1_label='Emissions',
-                    col2_label='Estimated Emissions',
-                    y_label='Emissions (Scaled)',
-                    out_filename='estimated_emissions.png'
-                )
-                logger.info(f"Finished test_msdr run!")
-                logger.info(f"Finished analysis for {operator} in {year}")
-            except Exception as e:
-                logger.error(f"Analysis failed with error: {e}")
-
-    else:
-        logger.info("Starting test_msdr analysis...")
-        analyzer = MSARAnalyzer(data=data)
-        analyzer.prepare()
-        analyzer.fit_compute()
-        analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
-        analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
-        analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
-        plot_over_time(
-            data=analyzer.final_df,
-            tso='TenneT',
-            col1='delta_emissions',
-            col2='delta_estimated_emissions',
-            col1_label='Emissions',
-            col2_label='Estimated Emissions',
-            y_label='Emissions (Scaled)'
-        )
-        logger.info(f"Finished test_msdr run!")
+@click.option(
+    '--test-rows',
+    type=click.IntRange(100, 1000),
+    default=1000,
+    help='Number of rows to use for the test run (e.g., 100 or 1000).'
+)
+def run_analysis_command(operator, year, is_test, test_rows):
+    """Run the MSAR analysis based on selected operator and year."""
+    files_to_process = _get_analysis_files(operator, year)
+    if not files_to_process:
+        return
+    
+    for file_path in files_to_process:
+        _run_analysis(file_path, is_test, test_rows)
