@@ -31,7 +31,7 @@ def fetch_group():
     help='Specifies the specific endpoint. To check available endpoints run "mef-tool entsoe -e"'
 )
 @click.option(
-    '--is-test', '-t',
+    '--is-test_msdr', '-t',
     is_flag=True,
     help='If set, fetch will be performed for one day according to default or passed timestamp +24h.'
 )
@@ -63,7 +63,7 @@ def fetch_entsoe(
     """Fetch data from the ENTSO-E API."""
     if is_test:
         end_date = start_date + timedelta(days=1)
-        click.echo("[TEST] Performing test run")
+        click.echo("[TEST] Performing test_msdr run")
 
     # Convert to pandas datetime
     try:

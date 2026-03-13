@@ -6,6 +6,7 @@ from pyprojroot import here
 
 root = here()
 data_dir = root / "data" / "processed"
+test_dir = root / "data" / "test"
 
 # Data dictionary for executing everything in the cli
 ANALYSIS_DFS = {
@@ -41,4 +42,4 @@ AMPRION = ANALYSIS_DFS['Amprion']
 TENNET = ANALYSIS_DFS['TenneT']
 TRANSNET_BW = ANALYSIS_DFS['TransnetBW']
 
-TEST_DF = pd.read_csv(f'{data_dir}/test_tennet.csv', index_col=0, delimiter=',')
+TEST_DF = pd.read_csv(f'{test_dir}/test_final_tennet_100.csv', index_col=0, delimiter=',')

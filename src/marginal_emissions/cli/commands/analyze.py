@@ -8,7 +8,7 @@ from pyprojroot import here
 
 from marginal_emissions import logger
 from marginal_emissions.conf.vars_analyze import *
-from marginal_emissions.core.msdr import MSDRAnalyzer
+from marginal_emissions.core.msar import MSARAnalyzer
 from marginal_emissions.utils.helper import *
 
 @click.group(name='analysis')
@@ -42,22 +42,16 @@ def analysis_group():
 @click.option(
     '--is-test', '-t',
     is_flag=True,
-    help='If set, analysis will be performed on shorter test dataset.'
-)
-@click.option(
-    '--run', '-r',
-    required=False,
-    type=str
+    help='If set, analysis will be performed on shorter test_msdr dataset.'
 )
 def set_data(
         operator,
         year,
-        is_test,
-        run
+        is_test
 ):
     if is_test:
         logger.info("PERFORMING TEST RUN")
-        _run_analysis(data=TEST_DF, run=run, is_test=True)
+        _run_analysis(data=TEST_DF, is_test=True)
     elif operator:
         tso = operator.lower()
         yr = year.lower() if year else 'all'
@@ -66,24 +60,24 @@ def set_data(
         match tso:
             case '50hertz':
                 if yr == 'all':
-                    _run_analysis(operator=tso, data=F_HERTZ, run=run)
+                    _run_analysis(operator=tso, data=F_HERTZ)
                 else:
-                    _run_analysis(operator=tso, data={yr: F_HERTZ[yr]}, run=run)
+                    _run_analysis(operator=tso, data={yr: F_HERTZ[yr]})
             case 'amprion':
                 if yr == 'all':
-                    _run_analysis(operator=tso, data=AMPRION, run=run)
+                    _run_analysis(operator=tso, data=AMPRION)
                 else:
-                    _run_analysis(operator=tso, data={yr: AMPRION[yr]}, run=run)
+                    _run_analysis(operator=tso, data={yr: AMPRION[yr]})
             case 'tennet':
                 if yr == 'all':
-                    _run_analysis(operator=tso, data=TENNET, run=run)
+                    _run_analysis(operator=tso, data=TENNET)
                 else:
-                    _run_analysis(operator=tso, data={yr: TENNET[yr]}, run=run)
+                    _run_analysis(operator=tso, data={yr: TENNET[yr]})
             case 'transnetbw':
                 if yr == 'all':
-                    _run_analysis(operator=tso, data=TRANSNET_BW, run=run)
+                    _run_analysis(operator=tso, data=TRANSNET_BW)
                 else:
-                    _run_analysis(operator=tso, data={yr: TRANSNET_BW[yr]}, run=run)
+                    _run_analysis(operator=tso, data={yr: TRANSNET_BW[yr]})
             case 'all':
                 if yr == 'all':
                     for area, years_dict in ANALYSIS_DFS.items():
@@ -97,19 +91,18 @@ def set_data(
     else:
         logger.error("Must provide either -t or -tso and -y flag.")
 
-def _run_analysis(data, run=None, operator=None, is_test=False):
+def _run_analysis(data, operator=None, is_test=False):
     # Check last run for class initialization
-    run = str(run) if run is not None else None
     if not is_test:
         logger.info(f"Starting analysis for {operator}...")
         if operator is None:
-            raise ValueError("Operator must be provided for non-test runs.")
+            raise ValueError("Operator must be provided for non-test_msdr runs.")
 
         for year, df in data.items():
             # Run analysis
             try:
                 logger.info(f"Starting analysis for {operator} in {year}")
-                analyzer = MSDRAnalyzer(tso=operator, data=df, run=run, year=year)
+                analyzer = MSARAnalyzer(tso=operator, data=df, year=year, test=is_test)
                 analyzer.prepare()
                 analyzer.fit_compute()
                 analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
@@ -117,21 +110,22 @@ def _run_analysis(data, run=None, operator=None, is_test=False):
                 analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
                 plot_over_time(
                     data=analyzer.final_df,
+                    tso=operator,
                     col1='delta_emissions',
-                    col1_label='Emissions',
                     col2='delta_estimated_emissions',
+                    col1_label='Emissions',
                     col2_label='Estimated Emissions',
                     y_label='Emissions (Scaled)',
                     out_filename='estimated_emissions.png'
                 )
-                logger.info(f"Finished test run!")
+                logger.info(f"Finished test_msdr run!")
                 logger.info(f"Finished analysis for {operator} in {year}")
             except Exception as e:
                 logger.error(f"Analysis failed with error: {e}")
 
     else:
-        logger.info("Starting test analysis...")
-        analyzer = MSDRAnalyzer(data=data)
+        logger.info("Starting test_msdr analysis...")
+        analyzer = MSARAnalyzer(data=data)
         analyzer.prepare()
         analyzer.fit_compute()
         analyzer.save_to_file(data=analyzer.final_df, filename='mef_final.csv')
@@ -139,11 +133,11 @@ def _run_analysis(data, run=None, operator=None, is_test=False):
         analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
         plot_over_time(
             data=analyzer.final_df,
+            tso='TenneT',
             col1='delta_emissions',
-            col1_label='Emissions',
             col2='delta_estimated_emissions',
+            col1_label='Emissions',
             col2_label='Estimated Emissions',
-            y_label='Emissions (Scaled)',
-            out_filename='estimated_emissions.png'
+            y_label='Emissions (Scaled)'
         )
-        logger.info(f"Finished test run!")
+        logger.info(f"Finished test_msdr run!")
