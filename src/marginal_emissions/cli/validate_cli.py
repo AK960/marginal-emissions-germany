@@ -29,7 +29,7 @@ def _get_validation_files(operator, year):
         
     return files_to_process
 
-def _run_validation(file_path):
+def _run_validation(file_path: Path):
     """Runs the validation for a single file."""
     try:
         # Extract TSO and year from the file path structure
@@ -37,13 +37,20 @@ def _run_validation(file_path):
         year = file_path.parent.name
         logger.info(f"Starting validation for {tso.capitalize()} in {year}")
 
+        # Create the validation directory
+        validation_dir = file_path.parent / "validation"
+        validation_dir.mkdir(exist_ok=True)
+        logger.info(f"Created validation directory: {validation_dir}")
+
         df = pd.read_csv(file_path, index_col='datetime', parse_dates=True)
         
         validator = MEFValidator(
             data=df,
             tso=tso.capitalize(),
             year=year,
+            save_dir=validation_dir  # Pass the directory to the validator
         )
+        
         validator.run_validation()
 
         logger.info(f"Finished validation for {tso.capitalize()} in {year}")

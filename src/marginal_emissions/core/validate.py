@@ -2,25 +2,34 @@
 Class for validating the MEF time series.
 """
 from marginal_emissions import logger
+from pathlib import Path
 
 class MEFValidator:
-    def __init__(self, data, tso, year):
+    def __init__(self, data, tso, year, save_dir: Path):
         """
         Initialize a MEF Validator Object.
         :param data: DataFrame with the final MEF results.
         :param tso: Name of the Transmission System Operator (TSO).
         :param year: The year of the data.
+        :param save_dir: The directory where validation results should be saved.
         """
         # Base
         self.df = data
         self.tso = tso
         self.year = year
+        self.save_dir = save_dir
         # Validation Input
+        logger.info(f"Initialized validator for {self.tso} ({self.year}) with {len(self.df)} rows.")
+        logger.info(f"Validation results will be saved to: {self.save_dir}")
 
 
     # ____________________ Entrypoint ____________________#
     def run_validation(self):
-        pass
+        logger.info("Running validation checks...")
+        # Placeholder for future validation logic
+        # Example of how you could use the save_dir:
+        # self.df.head().to_csv(self.save_dir / "sample_output.csv")
+        logger.info("Validation checks completed (placeholder).")
 
     # ____________________ Validation Functions ____________________#
     # Rubric 1: Expected Carbon Intensities (tests if the computed MEF aligns with a naive computation of an empirical annual average)
