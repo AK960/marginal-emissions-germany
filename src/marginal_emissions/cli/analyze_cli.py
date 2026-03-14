@@ -3,11 +3,10 @@ CLI command for running the MSAR analysis.
 """
 import click
 import pandas as pd
-from pyprojroot import here
-import os
 
 from marginal_emissions import logger
-from marginal_emissions.core.msar import MSARAnalyzer
+from marginal_emissions.core.analyze_msar import MSARAnalyzer
+from marginal_emissions.vars import DATA_DIR
 
 # Constants from the MSAR model
 WINDOW_SIZE = 672
@@ -15,7 +14,7 @@ STEP_SIZE = 32
 
 def _get_analysis_files(operator, year):
     """Finds analysis files based on operator and year."""
-    base_path = here() / "data" / "processed"
+    base_path = DATA_DIR / "processed"
     all_files = [f for f in base_path.glob("*.csv")]
     
     files_to_process = []

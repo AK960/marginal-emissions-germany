@@ -32,9 +32,6 @@ class SmardClient:
         :return: None, save response as a file
         """
 
-        for a in self.area & p in self.prod_type:
-            url = self.base_url + f'/chart_data/{self.prod_type}/{self.area}/index_{self.resolution}.json'
-
 
     def _convert_indices(self):
         """

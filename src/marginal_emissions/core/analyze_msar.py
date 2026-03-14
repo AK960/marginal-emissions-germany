@@ -7,6 +7,7 @@ import os
 import warnings
 from pathlib import Path
 
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -14,16 +15,15 @@ import pytz
 import statsmodels.api as sm
 from joblib import Parallel, delayed
 from pyprojroot import here
+from scipy import stats
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.model_selection import ParameterGrid
 from sklearn.preprocessing import StandardScaler
 from statsmodels.tools.sm_exceptions import ValueWarning, ConvergenceWarning
 from tqdm import tqdm
-from scipy import stats
-from pandas.plotting import autocorrelation_plot
-import matplotlib.dates as mdates
 
 from marginal_emissions import logger
+from marginal_emissions.vars import RESULTS_DIR
 
 # Suppress specific statsmodels warnings
 warnings.simplefilter('ignore', ValueWarning)
@@ -32,21 +32,23 @@ warnings.simplefilter('ignore', ConvergenceWarning)
 # Suppress RuntimeWarning from numpy, which often happens during optimization of unstable models
 warnings.simplefilter('ignore', RuntimeWarning)
 
+
 class MSARAnalyzer:
     def __init__(
         self,
         data,
-        lags=2,
+        max_lags=4,
+        ic='bic',
         tso=None,
         year=None,
-        window_length = 672, # 1 week = 7*24*4
-        step_size = 32, # Move window by for 8 hours
-        param_grid = None,
-        n_jobs = -1,
-        test = False,
-        test_rows = None,
-        num_iterations = None,
-        run:str = "msar"
+        window_length=672,  # 1 week = 7*24*4
+        step_size=32,  # Move window by for 8 hours
+        param_grid=None,
+        n_jobs=-1,
+        test=False,
+        test_rows=None,
+        num_iterations=None,
+        run: str = "msar"
     ):
         """
         Initialize a MSAR Analysis Object that considers autoregression and time varying transition probabilies.
@@ -62,29 +64,31 @@ class MSARAnalyzer:
         self.test = test
         self.test_rows = test_rows
         self.num_iterations = num_iterations
-        self.run = run # Number of the run to track progress
+        self.run = run  # Number of the run to track progress
         # Preprocessing
         self.scaler = StandardScaler()
         # Analysis
         ## Data
-        self.df = data # Contains original data
+        self.df = data  # Contains original data
         ## Params
         self.window_length = window_length
         self.step_size = step_size
         self.n_jobs = n_jobs
-        self.lags = lags
+        self.max_lags = max_lags
+        self.ic = ic
         self.param_grid = param_grid if param_grid is not None else {
-            'k_regimes': [2, 3], # Tests 2 or 3 regimes
-            'trend': ['c'], # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
-            'switching_trend': [True], # Allows for different intercept for each regime (Default = True)
-            'switching_exog': [True], # Allows different slope for each regime (Default = True)
-            'switching_variance': [True] # Allows different variance for each regime (Default = False)
+            'k_regimes': [2, 3],  # Tests 2 or 3 regimes
+            'trend': ['c'],
+            # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
+            'switching_trend': [True],  # Allows for different intercept for each regime (Default = True)
+            'switching_exog': [True],  # Allows different slope for each regime (Default = True)
+            'switching_variance': [True]  # Allows different variance for each regime (Default = False)
         }
         ## Outcomes
-        self.prep_df = None     # Df, specifically prepped for analysis: contains only z-transformed delta_generation and delta_emissions
-        self.indicators = []    # Contains indicators of the best model for evaluation --> not flat thus list not df
-        self.coeffs_df = None   # Contains regime coefficients with descriptive statistics params
-        self.final_df = None    # Df, that stores interim and final results
+        self.prep_df = None  # Df, specifically prepped for analysis: contains only z-transformed delta_generation and delta_emissions
+        self.indicators = []  # Contains indicators of the best model for evaluation --> not flat thus list not df
+        self.coeffs_df = None  # Contains regime coefficients with descriptive statistics params
+        self.final_df = None  # Df, that stores interim and final results
 
     # ____________________ Public functions ____________________#
     def prepare(self):
@@ -126,7 +130,7 @@ class MSARAnalyzer:
             )
 
             # Print inspection
-            #self._inspect_data(df)
+            # self._inspect_data(df)
 
             # Set analysis df as state
             self.prep_df = df
@@ -158,7 +162,6 @@ class MSARAnalyzer:
             valid_results = [item for sublist in results if sublist is not None for item in sublist]
 
             if valid_results:
-                # --- SMOOTHING LOGIC STARTS HERE ---
                 logger.info("Smoothing MEF results to remove block-boundary jumps...")
 
                 # 1. Create a raw, fully populated DataFrame from results
@@ -171,20 +174,21 @@ class MSARAnalyzer:
                 for i in range(len(window_indices) - 1):
                     # Define the current and the next block
                     current_block_start_idx = window_indices[i]
-                    next_block_start_idx = window_indices[i+1]
+                    next_block_start_idx = window_indices[i + 1]
 
                     # Get the timestamps for the end of the current block and start of the next
                     # The jump occurs between the last point of the old model and the first of the new
                     end_of_current_block_ts = self.prep_df.index[next_block_start_idx - 1]
                     start_of_next_block_ts = self.prep_df.index[next_block_start_idx]
 
-                    # Ensure these timestamps exist in our results
+                    # Ensure these timestamps exist in the results
                     if end_of_current_block_ts not in smoothed_df.index or start_of_next_block_ts not in smoothed_df.index:
                         continue
 
                     # 3. Calculate the jump (the error) for each MEF column
                     for col in mef_cols:
-                        jump = smoothed_df.loc[start_of_next_block_ts, col] - smoothed_df.loc[end_of_current_block_ts, col]
+                        jump = smoothed_df.loc[start_of_next_block_ts, col] - smoothed_df.loc[
+                            end_of_current_block_ts, col]
 
                         # 4. Define the slice of the DataFrame that belongs to the current model block
                         block_slice_start_ts = self.prep_df.index[current_block_start_idx]
@@ -199,17 +203,16 @@ class MSARAnalyzer:
                         correction_ramp = np.linspace(0, jump, len(block_timestamps))
                         smoothed_df.loc[block_timestamps, col] += correction_ramp
 
-                # --- SMOOTHING LOGIC ENDS HERE ---
-
                 self.final_df = smoothed_df.round(4)
                 self.indicators = [r['indicator'] for r in valid_results]
                 all_coeffs_list = [r['coeffs'] for r in valid_results]
                 self.coeffs_df = pd.concat(all_coeffs_list, ignore_index=True)
                 self.coeffs_df.set_index(['timestamp', 'parameter'], inplace=True)
-                
+
                 self._plot_results()
                 self._plot_sawtooth_debug(window_indices)
                 self._plot_avg_daily_profile()
+                self._diagnose_residuals()
             else:
                 logger.warning("No valid models were fitted across the entire dataset.")
                 self.final_df = pd.DataFrame()
@@ -229,9 +232,13 @@ class MSARAnalyzer:
         :param prep_data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :returns best_result: Determined model parameters
         """
-        current_window = prep_data.iloc[i : i + self.window_length]
-        timestamp = current_window.index[-1]   # timestamp of the last observation of the window:
-                                               # mef and estimated_emissions are computed for this observation
+        current_window = prep_data.iloc[i: i + self.window_length]
+        timestamp = current_window.index[-1]  # timestamp of the last observation of the window:
+        # mef and estimated_emissions are computed for this observation
+
+        # Find best lag parameter for each window
+        best_lag_for_window = self._find_best_lag(current_window)
+        logger.debug(f"Window at {timestamp}: Optimal lag found is {best_lag_for_window} using {self.ic.upper()}.")
 
         best_converged = False
         best_model = None
@@ -239,7 +246,7 @@ class MSARAnalyzer:
 
         # (1) Determine the best model for each window and store it in best_model
         for params in ParameterGrid(self.param_grid):
-            result, aic = self._fit_markov_model(current_window, params)
+            result, aic = self._fit_markov_model(window_data=current_window, params=params, order=best_lag_for_window)
 
             if result is None:
                 continue
@@ -287,11 +294,53 @@ class MSARAnalyzer:
             return None
 
     # ---------- Methods in the loop ----------#
-    def _fit_markov_model(self, window_data, params):
+    def _find_best_lag(self, window_data: pd.DataFrame) -> int:
+        """
+        Finds the optimal number of autoregressive lags for a given window
+        using a specified information criterion (AIC or BIC) on a simple OLS model.
+
+        :param window_data: The data for the current window.
+        :return: The optimal number of lags (p).
+        """
+        best_ic = np.inf
+        best_lag = 0
+        endog = window_data['delta_emissions']
+
+        for p in range(self.max_lags + 1):
+            # Prepare exogenous variables
+            exog_vars = ['delta_generation']
+            exog_df = window_data[exog_vars].copy()
+
+            if p > 0:
+                for i in range(1, p + 1):
+                    exog_df[f'ar_lag_{i}'] = endog.shift(i)
+
+            # Drop NaNs created by lagging
+            full_df = pd.concat([endog, exog_df], axis=1).dropna()
+            current_endog = full_df['delta_emissions']
+            current_exog = sm.add_constant(full_df.drop('delta_emissions', axis=1))
+
+            # Fit a fast OLS model
+            try:
+                model = sm.OLS(current_endog, current_exog).fit()
+                current_ic = getattr(model, self.ic)  # Gets model.bic or model.aic
+
+                if current_ic < best_ic:
+                    best_ic = current_ic
+                    best_lag = p
+            except Exception:
+                # If OLS fails, just skip this lag order
+                continue
+
+        return best_lag
+
+    @staticmethod
+    def _fit_markov_model(window_data, params, order):
         """
         Fits a single Markov Regression model for a given window and parameters. The fitted model is used for in-sample prediction and error computation.
         :param window_data: DataFrame with 'delta_emissions' and 'delta_generation' columns
         :param params: Dictionary with model parameters
+        :param order: The number of AR lags to include
         :returns msdr_results: Determined model parameters
         """
         endog = window_data['delta_emissions']
@@ -301,8 +350,8 @@ class MSARAnalyzer:
         has_tvtp = all(col in window_data.columns for col in tvtp_cols)
         tvtp_df = window_data[tvtp_cols].copy() if has_tvtp else None
 
-        if self.lags > 0:
-            for i in range(1, self.lags + 1):
+        if order > 0:
+            for i in range(1, order + 1):
                 exog[f'ar_lag_{i}'] = endog.shift(i)
             valid_idx = exog.dropna().index
             endog = endog.loc[valid_idx]
@@ -329,7 +378,7 @@ class MSARAnalyzer:
 
             return msdr_result, msdr_result.aic
         except Exception as e:
-            logger.error(f"Model fitting failed with error: {e}")
+            logger.error(f"Model fitting failed for order={order} with error: {e}")
             return None, np.inf
 
     @staticmethod
@@ -342,7 +391,7 @@ class MSARAnalyzer:
 
             # Get in-sample estimation of the model for the entire window to save computation time compared to another predict
             fitted_values = model.fittedvalues
-            #estimated_val = fitted_values.iloc[-1] # For step size 1
+            # estimated_val = fitted_values.iloc[-1] # For step size 1
             estimated_val = fitted_values.loc[timestamp]
 
             return {'delta_estimated_emissions': float(estimated_val)}
@@ -359,7 +408,7 @@ class MSARAnalyzer:
 
             # For extracting coeffs and iterating
             params = model.params.to_dict()
-            #smoothed_probs = model.smoothed_marginal_probabilities.iloc[-1].to_dict() # For step size 1
+            # smoothed_probs = model.smoothed_marginal_probabilities.iloc[-1].to_dict() # For step size 1
             smoothed_probs = model.smoothed_marginal_probabilities.loc[timestamp].to_dict()
 
             # 1. Find Intercepts
@@ -431,7 +480,7 @@ class MSARAnalyzer:
         mw_gen = self.scaler.mean_[0]
         std_emi = self.scaler.scale_[1]
         mw_emi = self.scaler.mean_[1]
-        slope_factor = std_emi / std_gen    # is slope coefficient, thus: beta_orig = beta_scaled * (std_emi / std_gen)
+        slope_factor = std_emi / std_gen  # is slope coefficient, thus: beta_orig = beta_scaled * (std_emi / std_gen)
 
         # Compute columns values
         mef_t_mwh = mef_scaled * slope_factor
@@ -468,8 +517,10 @@ class MSARAnalyzer:
             indicator_row = {
                 'timestamp': timestamp,
                 'k_regimes': int(model._results.k_regimes),
-                'smoothed_probs': {k: round(v, 4) for k, v in model.smoothed_marginal_probabilities.loc[timestamp].to_dict().items()},
-                'aic': round(float(model.aic), 4),  # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
+                'smoothed_probs': {k: round(v, 4) for k, v in
+                                   model.smoothed_marginal_probabilities.loc[timestamp].to_dict().items()},
+                'aic': round(float(model.aic), 4),
+                # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
                 'bic': round(float(model.bic), 4),
                 'hqic': round(float(model.hqic), 4),
                 'llf': round(float(model.llf), 4),
@@ -485,9 +536,9 @@ class MSARAnalyzer:
     def _get_save_dir(self):
         """Constructs the save directory based on instance attributes."""
         if self.test:
-            return self.root / "results" / "test" / f"{self.run}" / f"{self.tso}_{self.year}_{self.num_iterations}"
+            return RESULTS_DIR / "test" / f"{self.run}" / f"{self.tso}_{self.year}_{self.num_iterations}"
         else:
-            return self.root / "results" / f"{self.run}" / f"{self.tso}" / f"{self.year}"
+            return RESULTS_DIR / f"{self.run}" / f"{self.tso}" / f"{self.year}"
 
     def save_to_file(self, data, filename):
         """
@@ -543,11 +594,15 @@ class MSARAnalyzer:
             logger.error("No valid data points for plotting after interpolation.")
             return
 
+        # noinspection PyTypeChecker
         with plt.style.context('default'):
             fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(df_plot.index, df_plot['delta_estimated_emissions'], label='Estimated Emissions', alpha=0.7, color='tab:blue')
-            ax.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions', alpha=0.7, linestyle='--', color='tab:orange')
-            ax.set_title(f"{self.tso} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+            ax.plot(df_plot.index, df_plot['delta_estimated_emissions'], label='Estimated Emissions', alpha=0.7,
+                    color='tab:blue')
+            ax.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions', alpha=0.7, linestyle='--',
+                    color='tab:orange')
+            ax.set_title(
+                f"{self.tso} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
             ax.set_ylabel("Emissions (Scaled)")
             ax.set_xlabel("Time")
             ax.legend()
@@ -557,7 +612,7 @@ class MSARAnalyzer:
             save_dir = self._get_save_dir()
             os.makedirs(save_dir, exist_ok=True)
             filename = save_dir / "estimated_emissions.png"
-            
+
             try:
                 fig.savefig(filename, bbox_inches='tight')
                 logger.info(f"Plot saved to {filename}")
@@ -565,6 +620,101 @@ class MSARAnalyzer:
                 logger.error(f"Failed to save image to file: {e}. Continuing...")
             finally:
                 plt.close(fig)
+
+    # Diesen Code in die MSARAnalyzer-Klasse in analyze_msar.py einfügen
+
+    def _diagnose_residuals(self):
+        """
+        Performs a residual analysis and saves diagnostic plots and statistical test results.
+        """
+        if self.final_df is None or self.final_df.empty:
+            logger.warning("No final_df available for residual diagnostics. Skipping.")
+            return
+
+        logger.info("Performing residual diagnostics...")
+
+        # 1. Calculate residuals
+        residuals = (self.final_df['delta_emissions'] - self.final_df['delta_estimated_emissions']).dropna()
+
+        if residuals.empty:
+            logger.warning("Residuals are empty. Skipping diagnostics.")
+            return
+
+        # 2. Perform statistical tests
+        # Ljung-Box Test for Autocorrelation
+        ljung_box_lags = [10, 20, 40, 80]
+        ljung_box_results = sm.stats.acorr_ljungbox(residuals, lags=ljung_box_lags, return_df=True)
+        ljung_box_results.index.name = 'lags'
+
+        # Jarque-Bera Test for Normality
+        jb_stat, jb_p, skew, kurt = sm.stats.jarque_bera(residuals)
+
+        # 3. Create diagnostic plots (2x2 grid)
+        # noinspection PyTypeChecker
+        with plt.style.context('default'):
+            fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+            fig.suptitle(f'Residual Diagnostics for {self.tso} ({self.year})', fontsize=16)
+
+            # Plot 1: Residuals over Time
+            axes[0, 0].plot(residuals.index, residuals, color='tab:blue', linewidth=0.7, alpha=0.8)
+            axes[0, 0].axhline(y=0, color='tab:red', linestyle='--', linewidth=1.5)
+            axes[0, 0].set_title('Residuals Over Time')
+            axes[0, 0].set_xlabel('Time')
+            axes[0, 0].set_ylabel('Residual Value')
+            axes[0, 0].grid(True, alpha=0.3)
+            fig.autofmt_xdate(rotation=45, ha='right')
+
+            # Plot 2: Distribution of Residuals
+            axes[0, 1].hist(residuals, bins=50, density=True, color='tab:blue', alpha=0.7, label='Residuals')
+            # Overlay normal distribution
+            mu, std = stats.norm.fit(residuals)
+            x = np.linspace(*axes[0, 1].get_xlim(), 100)
+            axes[0, 1].plot(x, stats.norm.pdf(x, mu, std), 'k', linewidth=2, label='Normal Distribution')
+            axes[0, 1].set_title('Distribution of Residuals')
+            axes[0, 1].set_xlabel('Residual Value')
+            axes[0, 1].legend()
+            axes[0, 1].grid(True, alpha=0.3)
+
+            # Plot 3: Autocorrelation (ACF)
+            sm.graphics.tsa.plot_acf(residuals, lags=40, ax=axes[1, 0])
+            axes[1, 0].set_title('Autocorrelation of Residuals (ACF)')
+            axes[1, 0].grid(True, alpha=0.3)
+
+            # Plot 4: Q-Q Plot
+            sm.qqplot(residuals, line='s', ax=axes[1, 1])
+            axes[1, 1].set_title('Q-Q Plot vs. Normal Distribution')
+            axes[1, 1].grid(True, alpha=0.3)
+
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust for suptitle
+
+        # 4. Save plots and data
+        save_dir = self._get_save_dir()
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Save plot
+        plot_filename = save_dir / "residual_diagnostics.png"
+        try:
+            fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+            logger.info(f"Saved residual diagnostics plot to {plot_filename}")
+        except Exception as e:
+            logger.error(f"Failed to save residual diagnostics plot: {e}")
+        finally:
+            plt.close(fig)
+
+        # Create a single summary dictionary and save as JSON for better structure.
+        diagnostics_summary = {
+            'ljung_box': ljung_box_results.to_dict(orient='index'),
+            'jarque_bera': {
+                'statistic': jb_stat,
+                'p_value': jb_p,
+                'skewness': skew,
+                'kurtosis': kurt
+            }
+        }
+
+        # Saving as JSON is more structured for these combined results
+        self.save_to_file(data=diagnostics_summary, filename='residual_diagnostics.json')
+        logger.info(f"Saved diagnostic test results to {save_dir}")
 
     def _plot_sawtooth_debug(self, window_indices):
         """
@@ -586,6 +736,7 @@ class MSARAnalyzer:
         if df_plot.empty:
             return
 
+        # noinspection PyTypeChecker
         with plt.style.context('default'):
             # An _plot_results angepasste Größe
             fig, ax = plt.subplots(figsize=(12, 6))
@@ -644,6 +795,7 @@ class MSARAnalyzer:
         dummy_day = pd.date_range(start='2024-01-01', periods=len(daily_avg_15min), freq='15min')
         daily_avg_15min.index = dummy_day
 
+        # noinspection PyTypeChecker
         with plt.style.context('default'):
             # 3. Create the plot (angepasste Größe)
             fig, ax = plt.subplots(figsize=(12, 6))

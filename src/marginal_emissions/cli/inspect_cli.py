@@ -1,9 +1,18 @@
 """
 CLI command for inspecting data in a given directory.
 """
-
+from pathlib import Path
+from typing import List
 import click
-from marginal_emissions.utils.helper import get_all_subdirs
+
+def get_all_subdirs(base_path: str = "./data") -> List[Path]:
+    """Find subdirectories in a given path."""
+    path = Path(base_path)
+    if not path.exists():
+        return []
+
+    subdirs = sorted([p for p in path.rglob('*') if p.is_dir()])
+    return subdirs
 
 @click.group(name='inspect')
 def inspect_group():

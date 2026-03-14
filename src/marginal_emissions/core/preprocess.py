@@ -9,15 +9,15 @@ import pytz
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 from marginal_emissions import logger
-from marginal_emissions.conf.vars_preprocess import *
+from marginal_emissions.vars import *
 
 class MEFPreprocessor:
     def __init__(self):
         self.areas_gen_dict = {}
         self.emissions = {}
-        self.out_dir_interim = f'{root}/data/interim'
-        self.out_dir_processed = f'{root}/data/processed'
-        self.out_dir_figures = f'{root}/results/figures'
+        self.out_dir_interim = f'{DATA_DIR}/interim'
+        self.out_dir_processed = f'{DATA_DIR}/processed'
+        self.out_dir_figures = f'{RESULTS_DIR}/figures'
         os.makedirs(self.out_dir_interim, exist_ok=True)
         os.makedirs(self.out_dir_processed, exist_ok=True)
         os.makedirs(self.out_dir_figures, exist_ok=True)

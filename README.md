@@ -24,10 +24,10 @@ mef-tool analysis run [OPTIONS]
 ```
 
 **Options:**
-* `-tso`, `--operator`: Select the TSO to analyze (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`). Defaults to `All`.
-* `-y`, `--year`: Select the year to analyze (`2023`, `2024`). Defaults to `All`.
+* `-tso`, `--operator`: Select the TSO to analyze (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`). Defaults to `All`, processing all TSOs.
+* `-y`, `--year`: Select the year to analyze (`2023`, `2024`). Defaults to `All`, processing all years.
 * `-t`, `--is-test`: Flag to indicate a test run. This will save results to a separate `results/test/` directory.
-* `--num-iterations`: Number of sliding window iterations for the test run. Defaults to 50.
+* `--num-iterations`: Number of sliding window iterations for the test run. Only used if `--is-test` is set. Defaults to 50.
 
 **Example (Normal Run):**
 ```bash
@@ -68,31 +68,37 @@ sequenceDiagram
     MEFPreprocessor->>Files: Write (data/processed/final_*.csv)
     
     CLI->>MEFPreprocessor: validate_allocation()
-    MEFPreprocessor->>Files: Write (results/figures/*.png)
+    MEFPreprocessor->>Files: Write Plots (results/figures/delta_profile_*.png)
+    MEFPreprocessor->>Files: Write Plots (results/figures/allocation_validation_comparison.png)
     MEFPreprocessor-->>CLI: Return results
     CLI-->>User: Log success/failure
 
-    User->>CLI: mef-tool analysis run --operator TenneT --is-test --num-iterations 50
-    CLI->>CLI: _get_analysis_files('TenneT', 'All')
+    User->>CLI: mef-tool analysis run --operator TenneT --year 2023
+    CLI->>CLI: _get_analysis_files('TenneT', '2023')
     
     loop For each found file
-        CLI->>CLI: Calculate rows_to_load
+        CLI->>CLI: Calculate rows_to_load (if test)
         Files-->>CLI: Read (data/processed/final_*.csv)
-        CLI->>MSARAnalyzer: __init__(data, tso, year, is_test, test_rows)
+        CLI->>MSARAnalyzer: __init__(data, tso, year, is_test, ...)
         CLI->>MSARAnalyzer: prepare()
         CLI->>MSARAnalyzer: fit_compute()
         
         MSARAnalyzer->>MSARAnalyzer: _plot_results()
-        MSARAnalyzer->>Files: Write plot (results/.../estimated_emissions.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../estimated_emissions.png)
         
         MSARAnalyzer->>MSARAnalyzer: _plot_sawtooth_debug()
-        MSARAnalyzer->>Files: Write (results/.../sawtooth_debug_profile_smoothed.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../sawtooth_debug_profile_smoothed.png)
 
         MSARAnalyzer->>MSARAnalyzer: _plot_avg_daily_profile()
-        MSARAnalyzer->>Files: Write (results/.../mef_avg_daily_profile.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../mef_avg_daily_profile.png)
         
-        MSARAnalyzer->>Files: Write (results/.../mef_final.csv, coefficients.csv, indicators.json)
-        
+        MSARAnalyzer->>MSARAnalyzer: _diagnose_residuals()
+        MSARAnalyzer->>Files: Write Plot (results/.../residual_diagnostics.png)
+        MSARAnalyzer->>Files: Write Data (results/.../residual_diagnostics.json)
+
+        MSARAnalyzer->>Files: Write Data (results/.../mef_final.csv)
+        MSARAnalyzer->>Files: Write Data (results/.../coefficients.csv)
+        MSARAnalyzer->>Files: Write Data (results/.../indicators.json)
     end
     CLI-->>User: Log success/failure
 ```

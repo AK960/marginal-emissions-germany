@@ -1,3 +1,7 @@
+"""
+This file contains logic to locally synch the results dir with the latex assets dir.
+"""
+
 import click
 
 @click.command(name='synchtex')

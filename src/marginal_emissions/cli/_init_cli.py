@@ -1,12 +1,11 @@
 import click
 
-from marginal_emissions.cli.commands.validate import validation_group
-from .commands.synchlatex import synchtex_group
-from .commands.inspect import inspect_group
-from .commands.listapis import listapis_group
-from .commands.fetch import fetch_group
-from .commands.prep import prep
-from .commands.analyze import analysis_group
+from marginal_emissions.cli.validate_cli import validation_group
+from marginal_emissions.cli.inspect_cli import inspect_group
+from marginal_emissions.cli.listapis_cli import listapis_group
+from marginal_emissions.cli.fetch_cli import fetch_group
+from marginal_emissions.cli.preprocess_cli import prep
+from marginal_emissions.cli.analyze_cli import analysis_group
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -20,7 +19,7 @@ def cli(ctx, verbose):
     """
     ctx.ensure_object(dict)
     ctx.obj = {'VERBOSE': verbose}
-
+# noinspection PyTypeChecker
 cli.add_command(inspect_group, name='inspect')
 cli.add_command(fetch_group, name='fetch')
 cli.add_command(listapis_group, name='listapis')
