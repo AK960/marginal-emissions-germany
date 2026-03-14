@@ -24,19 +24,19 @@ EMI_COLS = {
 
 GEN_DICT = {
     '50hertz': pd.read_csv(
-        f'{root}/data/raw/Realisierte_Erzeugung_50Hertz_202212240000_202501020000_Viertelstunde.csv',
+        f'{root}/data/raw/realisierte_erzeugung_50hertz_202212240000_202501020000_viertelstunde.csv',
         sep=';'
     ),
     'amprion': pd.read_csv(
-        f'{root}/data/raw/Realisierte_Erzeugung_Amprion_202212240000_202501020000_Viertelstunde.csv',
+        f'{root}/data/raw/realisierte_erzeugung_amprion_202212240000_202501020000_viertelstunde.csv',
         sep=';'
     ),
     'tennet': pd.read_csv(
-        f'{root}/data/raw/Realisierte_Erzeugung_TenneT_202212240000_202501020000_Viertelstunde.csv',
+        f'{root}/data/raw/realisierte_erzeugung_tennet_202212240000_202501020000_viertelstunde.csv',
         sep=';'
     ),
-    'transnet_bw': pd.read_csv(
-        f'{root}/data/raw/Realisierte_Erzeugung_TransnetBW_202212240000_202501020000_Viertelstunde.csv',
+    'transnetbw': pd.read_csv(
+        f'{root}/data/raw/realisierte_erzeugung_transnetbw_202212240000_202501020000_viertelstunde.csv',
         sep=';'
     )
 }

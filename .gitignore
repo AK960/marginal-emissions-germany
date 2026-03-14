@@ -11,9 +11,6 @@ develop-eggs/
 # dotenv
 .env
 
-# Python Cheatsheet
-cheatsheet.ipynb
-
 # Tests Dir
 tests/
 
@@ -21,7 +18,4 @@ tests/
 #GEMINI.md
 
 # Legacy Notebooks
-notebooks/legacy/
-
-# Large files
-**/indicators.json
+**/legacy/

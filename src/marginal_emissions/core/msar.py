@@ -201,7 +201,7 @@ class MSARAnalyzer:
 
                 # --- SMOOTHING LOGIC ENDS HERE ---
 
-                self.final_df = smoothed_df
+                self.final_df = smoothed_df.round(4)
                 self.indicators = [r['indicator'] for r in valid_results]
                 all_coeffs_list = [r['coeffs'] for r in valid_results]
                 self.coeffs_df = pd.concat(all_coeffs_list, ignore_index=True)
@@ -460,6 +460,7 @@ class MSARAnalyzer:
                 axis=1
             )
             df_summary_coeffs.columns = ['coef', 'std_err', 'tval', 'pval', 'ci_lower', 'ci_upper']
+            df_summary_coeffs = df_summary_coeffs.round(4)
 
             df_summary_coeffs = df_summary_coeffs.reset_index().rename(columns={'index': 'parameter'})
             df_summary_coeffs['timestamp'] = timestamp
@@ -467,12 +468,11 @@ class MSARAnalyzer:
             indicator_row = {
                 'timestamp': timestamp,
                 'k_regimes': int(model._results.k_regimes),
-                #'smoothed_probs': model.smoothed_marginal_probabilities.iloc[-1].to_dict(), # For step size 1
-                'smoothed_probs': model.smoothed_marginal_probabilities.loc[timestamp].to_dict(),
-                'aic': float(model.aic),  # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
-                'bic': float(model.bic),
-                'hqic': float(model.hqic),
-                'llf': float(model.llf),
+                'smoothed_probs': {k: round(v, 4) for k, v in model.smoothed_marginal_probabilities.loc[timestamp].to_dict().items()},
+                'aic': round(float(model.aic), 4),  # 2k - 2 ln(L) // k = no. params, L = max llf (no. params vs. model fit)
+                'bic': round(float(model.bic), 4),
+                'hqic': round(float(model.hqic), 4),
+                'llf': round(float(model.llf), 4),
                 'mle_converged': bool(model.mle_retvals['converged'])
             }
 
@@ -503,7 +503,7 @@ class MSARAnalyzer:
         match ext:
             case "csv":
                 try:
-                    data.to_csv(filepath)
+                    data.to_csv(filepath, float_format='%.4f')
                     logger.info(f"Dataframe saved to {filepath}")
                 except Exception as e:
                     logger.error(f"Failed to save dataframe to csv: {e}")
