@@ -54,7 +54,6 @@ def _run_analysis(file_path, is_test, num_iterations):
                            f"File has {len(df)} rows, but {rows_to_load} are needed.")
             return
 
-
         analyzer = MSARAnalyzer(
             data=df,
             tso=tso.capitalize(),

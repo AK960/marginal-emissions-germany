@@ -19,14 +19,17 @@ def cli(ctx, verbose):
     """
     ctx.ensure_object(dict)
     ctx.obj = {'VERBOSE': verbose}
+
 # noinspection PyTypeChecker
-cli.add_command(inspect_group, name='inspect')
-cli.add_command(fetch_group, name='fetch')
-cli.add_command(listapis_group, name='listapis')
-# cli.add_command(synchtex_group, name='synchtex')
-cli.add_command(prep)
-cli.add_command(analysis_group, name='analysis')
-cli.add_command(validation_group, name='validation')
+def register_commands():
+    cli.add_command(inspect_group, name='inspect')
+    cli.add_command(fetch_group, name='fetch')
+    cli.add_command(listapis_group, name='listapis')
+    cli.add_command(prep)
+    cli.add_command(analysis_group, name='analysis')
+    cli.add_command(validation_group, name='validation')
+
+register_commands()
 
 if __name__ == "__main__":
     cli()

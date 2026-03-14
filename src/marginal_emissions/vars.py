@@ -9,8 +9,9 @@ from pyprojroot import here
 ROOT = here()
 RESULTS_DIR = ROOT / "results"
 DATA_DIR = ROOT / "data"
+VALIDATION_DIR = ""
 
-# ---------------------- Preprocess ----------------------
+# ---------------------- Preprocess -----------------------
 EMI_DICT = {
     'emi_2022': pd.read_csv(f'{DATA_DIR}/raw/emissions_ger_2022_hourly_lastweek.csv', sep=','),
     'emi_2023': pd.read_csv(f'{DATA_DIR}/raw/emissions_ger_2023_hourly.csv', sep=','),
@@ -54,6 +55,11 @@ GEN_COLS = {
     'Sonstige Konventionelle [MWh] Originalauflösungen': 'other_conventionals'
 }
 
+# ---------------------- Validation -----------------------
+
+
+
+# ---------------------- Fetching -------------------------
 # CLI options
 AVAILABLE_APIS = ['entsoe']
 
