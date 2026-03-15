@@ -1,0 +1,25 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+
+# IDE and OS specific
+.idea
+.vscode
+*.pyc
+__pycache__/
+.DS_Store
+
+# Local environment
+.env
+venv/
+*.conda
+.ipynb_checkpoints
+
+# Build artifacts
+build/
+dist/
+*.egg-info
