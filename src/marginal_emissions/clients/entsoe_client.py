@@ -11,7 +11,7 @@ import requests
 from entsoe.exceptions import NoMatchingDataError
 from entsoe.parsers import parse_generation
 
-from marginal_emissions.conf.vars_fetch import *
+from marginal_emissions.vars import *
 from . import base_client, logger
 
 class EntsoeClient(base_client.EnergyDataClient):

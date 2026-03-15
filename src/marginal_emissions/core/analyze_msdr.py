@@ -428,7 +428,7 @@ class MSDRAnalyzer:
         if self.test:
             save_dir = self.root / "results" / f"test_{self.run}"
         else:
-            save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso}_{self.year}"
+            save_dir = self.root / "results" / f"run_{self.run}" / f"{self.tso.lower()}_{self.year}"
         os.makedirs(save_dir, exist_ok=True)
         filepath = save_dir / filename
 

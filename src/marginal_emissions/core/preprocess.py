@@ -96,10 +96,6 @@ class MEFPreprocessor:
 
             gen = gen.rename(columns=GEN_COLS)
 
-            # Only keep columns from GEN_COLS
-            valid_cols = [c for c in gen.columns if c in GEN_COLS.values()]
-            gen = gen.loc[:, valid_cols]
-
             # Transform date columns to datetime and set index
             gen['datetime'] = pd.to_datetime(gen['datetime'], format="%d.%m.%Y %H:%M")
             gen = gen.set_index('datetime')
@@ -119,8 +115,16 @@ class MEFPreprocessor:
                     )
                     gen[col] = pd.to_numeric(gen[col], errors='coerce')
 
-            # Aggregate conventional generation
-            gen['total_generation'] = gen.sum(axis=1, numeric_only=True)
+            # Aggregate all generation before removing everything but conventional sources
+            gen['total_generation_all'] = gen.sum(axis=1, numeric_only=True)
+
+            # 2. Define which columns to keep: conventional fuels + the new total_generation_all
+            conventional_cols = [c for c in GEN_COLS.values() if c in gen.columns]
+            cols_to_keep = conventional_cols + ['total_generation_all']
+            gen = gen[cols_to_keep]
+
+            # 3. Calculate total_generation (conventional only) from the remaining fuel columns
+            gen['total_generation'] = gen[conventional_cols].sum(axis=1, numeric_only=True)
 
             # Fill instance df
             self.areas_gen_dict[area] = gen
@@ -221,8 +225,8 @@ class MEFPreprocessor:
 
             # Rearrange df
             other_cols = [c for c in final_df_all.columns if c not in
-                          ['total_generation', 'delta_generation', 'total_emissions', 'delta_emissions']]
-            new_order = other_cols + ['total_generation', 'delta_generation', 'total_emissions', 'delta_emissions']
+                          ['total_generation', 'total_generation_all', 'delta_generation', 'total_emissions', 'delta_emissions']]
+            new_order = other_cols + ['total_generation', 'total_generation_all', 'delta_generation', 'total_emissions', 'delta_emissions']
             final_df_all = final_df_all[new_order]
 
             # Split by year - window length
@@ -341,29 +345,31 @@ class MEFPreprocessor:
             end_date = start_date + pd.Timedelta(days=days_to_plot)
             df_plot = df_plot.loc[start_date:end_date]
 
-            fig, ax = plt.subplots(figsize=(15, 7))
-            ax.plot(df_plot.index, df_plot['delta_emissions'], label='Delta Emissions', color='red', linewidth=0.8)
+            if df_plot.empty:
+                logger.warning(f"No data to plot for delta profile of region {region}")
+                continue
 
-            # Highlight the hourly boundaries
-            for i in range(days_to_plot + 1):
-                day_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0) + pd.Timedelta(days=i)
-                for hour in range(24):
-                    ax.axvline(day_start + pd.Timedelta(hours=hour), color='grey', linestyle='--', linewidth=0.5)
+            # noinspection PyTypeChecker
+            with plt.style.context('default'):
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.plot(df_plot.index, df_plot['delta_emissions'], label='Delta Emissions', alpha=0.7,
+                        color='tab:blue')
 
-            ax.set_title(f'Delta Emissions Profile for {region} (First {days_to_plot} Days) - Smoothed')
-            ax.set_xlabel('Timestamp (UTC)')
-            ax.set_ylabel('Delta Emissions (tCO2 per 15 min)')
-            ax.legend()
-            ax.grid(True, which='major', linestyle='-', linewidth='0.5', color='lightgrey')
-            
-            plt.tight_layout()
-            plot_filename = f'{self.out_dir_figures}/delta_profile_{region}_smoothed.png'
-            try:
-                fig.savefig(plot_filename)
-                logger.info(f"Saved delta profile plot to {plot_filename}")
-            except Exception as e:
-                logger.error(f"Failed to save plot: {e}")
-            plt.close(fig)
+                ax.set_title(f'Delta Emissions Profile for {region} (First {days_to_plot} Days)')
+                ax.set_xlabel('Time')
+                ax.set_ylabel('Delta Emissions (tCO2 per 15 min)')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                fig.autofmt_xdate(rotation=45)
+
+                plot_filename = f'{self.out_dir_figures}/delta_profile_{region}_smoothed.png'
+                try:
+                    fig.savefig(plot_filename, bbox_inches='tight')
+                    logger.info(f"Saved delta profile plot to {plot_filename}")
+                except Exception as e:
+                    logger.error(f"Failed to save plot: {e}")
+                finally:
+                    plt.close(fig)
 
     def _plot_validation_comparison(self, original_hourly, resampled_hourly):
         """

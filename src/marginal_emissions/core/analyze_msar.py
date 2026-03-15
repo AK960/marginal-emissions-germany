@@ -51,7 +51,7 @@ class MSARAnalyzer:
         run: str = "msar"
     ):
         """
-        Initialize a MSAR Analysis Object that considers autoregression and time varying transition probabilies.
+        Initialize a MSAR analysis object that considers autoregression and time varying transition probabilities.
         :param tso: Name of the Transmission System Operator (TSO)
         :param window_length: Size of the rolling window (default: 1 week = 672 quarters)
         :param param_grid: Dictionary for grid search parameters
@@ -60,6 +60,7 @@ class MSARAnalyzer:
         # Base
         self.root = here()
         self.tso = tso
+        self.tso_display = "50Hertz" if tso == "50hertz" else tso.capitalize()
         self.year = year
         self.test = test
         self.test_rows = test_rows
@@ -78,17 +79,16 @@ class MSARAnalyzer:
         self.ic = ic
         self.param_grid = param_grid if param_grid is not None else {
             'k_regimes': [2, 3],  # Tests 2 or 3 regimes
-            'trend': ['c'],
-            # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
-            'switching_trend': [True],  # Allows for different intercept for each regime (Default = True)
-            'switching_exog': [True],  # Allows different slope for each regime (Default = True)
-            'switching_variance': [True]  # Allows different variance for each regime (Default = False)
+            'trend': ['c'],                 # Allows for intercept; captures / absorbs all effects that are not proportional to marginal changes in generation (allows for better fit of slope coefficient) (Default = 'c')
+            'switching_trend': [True],      # Allows for different intercept for each regime (Default = True)
+            'switching_exog': [True],       # Allows different slope for each regime (Default = True)
+            'switching_variance': [True]    # Allows different variance for each regime (Default = False)
         }
         ## Outcomes
-        self.prep_df = None  # Df, specifically prepped for analysis: contains only z-transformed delta_generation and delta_emissions
-        self.indicators = []  # Contains indicators of the best model for evaluation --> not flat thus list not df
-        self.coeffs_df = None  # Contains regime coefficients with descriptive statistics params
-        self.final_df = None  # Df, that stores interim and final results
+        self.prep_df = None     # Df, specifically prepped for analysis: contains only z-transformed delta_generation and delta_emissions
+        self.indicators = []    # Contains indicators of the best model for evaluation --> not flat thus list not df
+        self.coeffs_df = None   # Contains regime coefficients with descriptive statistics params
+        self.final_df = None    # Df, that stores interim and final results
 
     # ____________________ Public functions ____________________#
     def prepare(self):
@@ -156,7 +156,7 @@ class MSARAnalyzer:
             # Parallel execution with a progress bar
             results = Parallel(n_jobs=self.n_jobs)(
                 delayed(self._process_window)(i=i, prep_data=self.prep_df)
-                for i in tqdm(window_indices, desc=f"Analyzing {self.tso}")
+                for i in tqdm(window_indices, desc=f"Analyzing {self.tso_display}")
             )
 
             valid_results = [item for sublist in results if sublist is not None for item in sublist]
@@ -602,7 +602,7 @@ class MSARAnalyzer:
             ax.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions', alpha=0.7, linestyle='--',
                     color='tab:orange')
             ax.set_title(
-                f"{self.tso} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+                f"{self.tso_display} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
             ax.set_ylabel("Emissions (Scaled)")
             ax.set_xlabel("Time")
             ax.legend()
@@ -653,7 +653,7 @@ class MSARAnalyzer:
         # noinspection PyTypeChecker
         with plt.style.context('default'):
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle(f'Residual Diagnostics for {self.tso} ({self.year})', fontsize=16)
+            fig.suptitle(f'Residual Diagnostics for {self.tso_display} ({self.year})', fontsize=16)
 
             # Plot 1: Residuals over Time
             axes[0, 0].plot(residuals.index, residuals, color='tab:blue', linewidth=0.7, alpha=0.8)
@@ -754,7 +754,7 @@ class MSARAnalyzer:
                         ax.axvline(boundary_ts, color='tab:red', linestyle='--', linewidth=1.0, alpha=0.5,
                                    label='Model Switch' if i == self.step_size else "")
 
-            ax.set_title(f'Smoothed MEF vs. Model Application Boundaries for {self.tso} ({self.year})')
+            ax.set_title(f'Smoothed MEF vs. Model Application Boundaries for {self.tso_display} ({self.year})')
             ax.set_xlabel('Time')
             ax.set_ylabel('MEF (t CO₂ / MWh)')
 
@@ -810,7 +810,7 @@ class MSARAnalyzer:
             ax.set_xlim(dummy_day[0], dummy_day[-1])
 
             # 5. Labels and layout
-            ax.set_title(f'Durchschnittliches Tagesprofil des MEF ({self.tso}, {self.year})')
+            ax.set_title(f'Durchschnittliches Tagesprofil des MEF ({self.tso_display}, {self.year})')
             ax.set_xlabel('Uhrzeit')
             ax.set_ylabel('MEF (t CO₂ / MWh)')
 

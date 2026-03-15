@@ -19,12 +19,12 @@ def _get_analysis_files(operator, year):
     
     files_to_process = []
 
-    operators = [operator] if operator.lower() != 'all' else ['50hertz', 'amprion', 'tennet', 'transnetbw']
+    operators = [operator.lower()] if operator.lower() != 'all' else ['50hertz', 'amprion', 'tennet', 'transnetbw']
     years = [year] if year.lower() != 'all' else ['2023', '2024']
 
     for op in operators:
         for yr in years:
-            pattern = f"final_{op.lower()}_{yr}"
+            pattern = f"final_{op}_{yr}"
             for f in all_files:
                 if pattern in f.name:
                     files_to_process.append(f)
@@ -38,7 +38,11 @@ def _run_analysis(file_path, is_test, num_iterations):
     """Runs the MSAR analysis for a single file."""
     try:
         tso, year = file_path.stem.split('_')[1:3]
-        logger.info(f"Starting analysis for {tso.capitalize()} in {year}")
+        tso = tso.lower()  # Ensure tso is lowercase internally
+
+        # For display purposes only
+        tso_display = "50Hertz" if tso == "50hertz" else tso.capitalize()
+        logger.info(f"Starting analysis for {tso_display} in {year}")
 
         rows_to_load = None
         if is_test:
@@ -56,7 +60,7 @@ def _run_analysis(file_path, is_test, num_iterations):
 
         analyzer = MSARAnalyzer(
             data=df,
-            tso=tso.capitalize(),
+            tso=tso,  # Pass lowercase tso to analyzer
             year=year,
             test=is_test,
             test_rows=rows_to_load if is_test else None,
@@ -71,9 +75,9 @@ def _run_analysis(file_path, is_test, num_iterations):
             analyzer.save_to_file(data=analyzer.coeffs_df, filename='coefficients.csv')
             analyzer.save_to_file(data=analyzer.indicators, filename='indicators.json')
         else:
-            logger.warning(f"No results generated for {tso.capitalize()} in {year}. Skipping file saving.")
+            logger.warning(f"No results generated for {tso_display} in {year}. Skipping file saving.")
 
-        logger.info(f"Finished analysis for {tso.capitalize()} in {year}")
+        logger.info(f"Finished analysis for {tso_display} in {year}")
 
     except Exception as e:
         logger.error(f"Analysis for {file_path.name} failed with error: {e}")

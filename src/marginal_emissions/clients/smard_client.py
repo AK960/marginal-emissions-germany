@@ -8,7 +8,7 @@ from typing import Optional, Dict
 import pandas as pd
 import json
 import requests
-from marginal_emissions.conf.vars_fetch import SMARD_BASE_URL, SMARD_FILTER, SMARD_REGION
+from marginal_emissions.vars import SMARD_BASE_URL, SMARD_FILTER, SMARD_REGION
 
 class SmardClient:
     def __init__(self):

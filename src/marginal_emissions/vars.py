@@ -9,7 +9,7 @@ from pyprojroot import here
 ROOT = here()
 RESULTS_DIR = ROOT / "results"
 DATA_DIR = ROOT / "data"
-VALIDATION_DIR = ""
+TESTS_DIR = RESULTS_DIR / "test"
 
 # ---------------------- Preprocess -----------------------
 EMI_DICT = {
@@ -56,7 +56,12 @@ GEN_COLS = {
 }
 
 # ---------------------- Validation -----------------------
-
+MAX_EF_DICT = {
+    'lignite_generation': 1360,             # ifo-Institut (Buchal et al. 2019)
+    'hard_coal_generation': 1060,           # ifo-Institut (Buchal et al. 2019)
+    'other_conventionals_generation': 870,  # ifo-Institut (Buchal et al. 2019): Heizöl schwer weil dreckigstes in Kategorie
+    'fossile_gas_generation': 550           # ifo-Institut (Buchal et al. 2019)
+}
 
 
 # ---------------------- Fetching -------------------------

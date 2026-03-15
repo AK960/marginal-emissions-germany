@@ -11,7 +11,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from marginal_emissions.clients.entsoe_client import EntsoeClient
-from marginal_emissions.conf.vars_fetch import ENTSOE_BASE_URL, QUERY_START, QUERY_END, EIC_CONTROL_AREA_CODES
+from marginal_emissions.vars import ENTSOE_BASE_URL, QUERY_START, QUERY_END, EIC_CONTROL_AREA_CODES
 
 @click.group(name='fetch')
 def fetch_group():
