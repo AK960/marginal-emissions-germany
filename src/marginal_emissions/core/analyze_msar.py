@@ -621,8 +621,6 @@ class MSARAnalyzer:
             finally:
                 plt.close(fig)
 
-    # Diesen Code in die MSARAnalyzer-Klasse in analyze_msar.py einfügen
-
     def _diagnose_residuals(self):
         """
         Performs a residual analysis and saves diagnostic plots and statistical test results.
@@ -641,16 +639,12 @@ class MSARAnalyzer:
             return
 
         # 2. Perform statistical tests
-        # Ljung-Box Test for Autocorrelation
         ljung_box_lags = [10, 20, 40, 80]
         ljung_box_results = sm.stats.acorr_ljungbox(residuals, lags=ljung_box_lags, return_df=True)
         ljung_box_results.index.name = 'lags'
-
-        # Jarque-Bera Test for Normality
         jb_stat, jb_p, skew, kurt = sm.stats.jarque_bera(residuals)
 
         # 3. Create diagnostic plots (2x2 grid)
-        # noinspection PyTypeChecker
         with plt.style.context('default'):
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
             fig.suptitle(f'Residual Diagnostics for {self.tso_display} ({self.year})', fontsize=16)
@@ -666,7 +660,6 @@ class MSARAnalyzer:
 
             # Plot 2: Distribution of Residuals
             axes[0, 1].hist(residuals, bins=50, density=True, color='tab:blue', alpha=0.7, label='Residuals')
-            # Overlay normal distribution
             mu, std = stats.norm.fit(residuals)
             x = np.linspace(*axes[0, 1].get_xlim(), 100)
             axes[0, 1].plot(x, stats.norm.pdf(x, mu, std), 'k', linewidth=2, label='Normal Distribution')
@@ -676,22 +669,21 @@ class MSARAnalyzer:
             axes[0, 1].grid(True, alpha=0.3)
 
             # Plot 3: Autocorrelation (ACF)
-            sm.graphics.tsa.plot_acf(residuals, lags=40, ax=axes[1, 0])
+            sm.graphics.tsa.plot_acf(residuals, lags=40, ax=axes[1, 0], markerfacecolor='tab:orange', markeredgecolor='tab:orange')
             axes[1, 0].set_title('Autocorrelation of Residuals (ACF)')
             axes[1, 0].grid(True, alpha=0.3)
 
             # Plot 4: Q-Q Plot
-            sm.qqplot(residuals, line='s', ax=axes[1, 1])
+            sm.qqplot(residuals, line='s', ax=axes[1, 1], color='tab:blue', marker='o')
             axes[1, 1].set_title('Q-Q Plot vs. Normal Distribution')
             axes[1, 1].grid(True, alpha=0.3)
 
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Adjust for suptitle
+            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         # 4. Save plots and data
         save_dir = self._get_save_dir()
         os.makedirs(save_dir, exist_ok=True)
 
-        # Save plot
         plot_filename = save_dir / "residual_diagnostics.png"
         try:
             fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
@@ -701,7 +693,6 @@ class MSARAnalyzer:
         finally:
             plt.close(fig)
 
-        # Create a single summary dictionary and save as JSON for better structure.
         diagnostics_summary = {
             'ljung_box': ljung_box_results.to_dict(orient='index'),
             'jarque_bera': {
@@ -711,8 +702,6 @@ class MSARAnalyzer:
                 'kurtosis': kurt
             }
         }
-
-        # Saving as JSON is more structured for these combined results
         self.save_to_file(data=diagnostics_summary, filename='residual_diagnostics.json')
         logger.info(f"Saved diagnostic test results to {save_dir}")
 

@@ -1,12 +1,161 @@
 # marginal-emissions-germany
-This project contains a Python pipeline to compute marginal emission factors for the German electricity market. It processes high-resolution historical open source market data from official sources to model market dynamics beyond the merit-order principle and assess the environmental impact of heatpumps, based on their marginal emissions.
+This project contains a Python pipeline to compute marginal emission factors for the German electricity market for the years 2023 and 2024. It processes high-resolution historical open source market data from official sources to model market dynamics. The results can be used to evaluate the emissions mitigation potential of demand side interventions and sector coupling technologies.
+
+To capture the non-linear and regime-dependent behavior of the electricity market, this project uses a **Markov-Switching Autoregressive (MSAR) model**. This approach goes beyond simple linear regression by allowing the relationship between electricity generation and emissions to change depending on the underlying state of the market (e.g., "base load" vs. "peak load" regimes). By modeling these distinct regimes, the pipeline can more accurately determine which power plant type is likely to respond to a marginal change in demand, providing a more nuanced and realistic marginal emission factor.
+
+## Project Structure
+- `src/marginal_emissions/`: Main package.
+    - `core/`: Core logic for preprocessing (`preprocess.py`), MSAR modeling (`analyze_msar.py`), and validation (`validate.py`).
+    - `cli/`: CLI implementation using Click.
+        - `_init_cli.py`: Entry point for the `mef` command.
+        - `preprocess_cli.py`, `analyze_cli.py`, etc.: Individual command implementations.
+    - `clients/`: API clients for data fetching (ENTSO-E, SMARD).
+    - `vars.py`: Configuration, environment variables, and data mappings.
+    - `utils/`: Helper functions.
+- `data/`:
+    - `raw/`: Original CSV files from external sources.
+    - `interim/`: Intermediate processing steps (UTC-converted and merged data).
+    - `processed/`: Final datasets ready for MSAR analysis.
+- `results/`: Output directory for analysis results.
+    - `msar/`: Final coefficients, plots, and indicators for each TSO and year.
+    - `figures/`: Preprocessing and validation plots.
+    - `test/`: Results from test runs (e.g., sliding window iterations).
+- `notebooks/`: Jupyter notebooks for exploratory data analysis (EDA), testing, and validation.
+---
+
+## Docker-Based Workflow
+
+This guide describes the complete workflow from cloning the repository to running the analysis in a containerized environment. This method is recommended as it guarantees a consistent setup across all platforms (Windows, macOS, and Linux).
+
+### Prerequisites
+- **Git**: Required to clone the repository.
+- **Docker**: Ensure Docker is installed and running on your system.
+  - For Windows and macOS, install **Docker Desktop**.
+  - For Linux, install **Docker Engine**.
+
+### Step 1: Get the Project Files
+
+1.  **Clone the repository**: Open a terminal and run the following command to download the project files.
+    ```bash
+    git clone https://github.com/AK960/marginal-emissions-germany.git
+    ```
+
+2.  **Navigate into the project directory**:
+    ```bash
+    cd marginal-emissions-germany
+    ```
+
+3.  **Prepare Data**: Place your raw data files into the `data/raw/` directory. The project expects specific subdirectories and file structures as defined in `src/marginal_emissions/vars.py`. By default, the input data for the years 2023 and 2024 is already provided within the `data/raw/`, `data/interim/`, and `data/processed/` directories.
+
+### Step 2: Build the Docker Image (One-Time Setup)
+
+This step builds the container image with all necessary dependencies. It only needs to be run once per machine, or again if you change the `Dockerfile` or `requirements.yaml`.
+
+1.  **From the project's root directory, run the build command**:
+    ```bash
+    docker build -t mef-germany .
+    ```
+    *(This may take several minutes on the first run.)*
+
+### Step 3: Run the Interactive Shell & Analysis
+
+This is the standard way to work with the tool. It starts a shell inside the container with your project files mounted.
+
+1.  **In your terminal, from the project's root directory, run the appropriate command for your system**:
+
+    -   **Linux / macOS / Windows (PowerShell)**:
+        ```bash
+        docker run --rm -it -v ./data:/app/data -v ./results:/app/results mef-germany sh
+        ```
+    - Your terminal prompt will change (e.g., to `/app #`), indicating you are now inside the container.
+
+2.  **Execute `mef-tool` commands** as needed. For example:
+    ```bash
+    # Run the full preprocessing pipeline
+    mef prep
+
+    # Run the analysis for a specific TSO and year
+    mef analysis run --operator 50Hertz --year 2023
+    ```
+
+3.  **Accessing Results**: The `-v` flag in the `docker run` command creates a live link between the container's directories and the corresponding directories on your local machine. **Any files (plots, CSVs) generated in the container will instantly appear in the `results` folder on your computer.**
+
+4.  **Exit the container** by typing `exit` and pressing Enter.
+    ```bash
+    exit
+    ```
+
+---
+
+## Alternative: Local Conda Workflow
+
+If you prefer not to use Docker, you can set up a local Conda environment. This workflow is also cross-platform.
+
+### Prerequisites
+- **Miniconda or Anaconda**: Must be installed on your system.
+
+### Step 1: Get the Project Files
+
+1.  **Clone the repository** and navigate into the project directory as described in the Docker workflow.
+2.  **Prepare Data**: Ensure your data is in the `data/raw` directory.
+
+### Step 2: Create and Activate the Conda Environment
+
+1.  **Create the environment**: From the project's root directory, run the following command. It will create a new Conda environment named `mef-germany` using the `environment_clean.yaml` file. Since this file contains only the base packages, you may need to install further packages on the go.
+    ```bash
+    conda env create -f environment_clean.yaml
+    ```
+    When working on a Debian Linux system, the `requirements.yaml` already contains a complete list of the required packages. 
+    ```bash
+    conda env create -f environment.yaml
+    ```
+
+2.  **Activate the environment**: You must activate the environment each time you open a new terminal to work on the project.
+    ```bash
+    conda activate mef-germany
+    ```
+    Your terminal prompt should now show `(mef-germany)`.
+
+### Step 3: Install the Project
+
+This step makes the `mef` command-line tool available within your activated environment.
+
+1.  **Run the installation**:
+    ```bash
+    pip install -e .
+    ```
+    *(The `-e` flag stands for "editable", meaning changes you make to the source code will be immediately effective without needing to reinstall.)*
+
+### Step 4: Run the Analysis
+
+With the `mef-germany` environment active, you can now use the `mef` tool directly.
+
+1.  **Execute commands** as needed:
+    ```bash
+    # Check if the tool is installed correctly
+    mef --version
+
+    # Run the preprocessing
+    mef prep
+
+    # Run an analysis
+    mef analysis run --operator Amprion --year 2023
+    ```
+
+2.  **Accessing Results**: Since you are running locally, all results will be saved directly into the `results` directory within your project folder.
+
+### Deactivating the Environment
+When you are finished, you can deactivate the environment:
+```bash
+conda deactivate
+```
 
 ---
 ## Usage
 
 ### 1. Data Fetching
 
-NOTE: The `mefh` command is not fully integrated. It allows for automated data fetching from the API, yet the obtained data is not used in the later analysis process. The data for the analysis is obtained from SMARD. The platform also provides an API so that this logic could be implemented to allow for enhanced automation of the entire analysis.
+NOTE: The `mef fetch` command is not fully integrated. It allows for automated data fetching from the API, yet the obtained data is not used in the later analysis process. The data for the analysis is obtained from SMARD. The platform also provides an API so that this logic could be implemented to allow for enhanced automation of the entire analysis.
 
 The `fetch entsoe` command allows you to download data from the ENTSO-E API.
 ```bash
@@ -169,27 +318,8 @@ sequenceDiagram
 ```
 
 ---
-## Appendix
-### [Important links]
-#### ENTSOe
-- [ENTSO-E API Documentation](https://documenter.getpostman.com/view/7009892/2s93JtP3F6#intro)
-- [API Parameter Guide](https://transparencyplatform.zendesk.com/hc/en-us/articles/15692855254548-Sitemap-for-Restful-API-Integration)
-- [EIC Manual & Codes](https://www.entsoe.eu/data/energy-identification-codes-eic/)
-- [Transparency Platform Guide](https://transparencyplatform.zendesk.com/hc/en-us/categories/13771885458964-Guides) <!-- Data consumers: MoP Ref2 and Ref19 recommended -->
-- [Transparency Platform Knowledge Base](https://transparencyplatform.zendesk.com/hc/en-us/categories/12818231533716-Knowledge-base)
-- [Manual of Procedures](https://www.entsoe.eu/data/transparency-platform/mop/)
-- [Manual of Procedures v3.5 Download with Material](https://eepublicdownloads.blob.core.windows.net/public-cdn-container/clean-documents/mc-documents/transparency-platform/MOP/MoP_v3r5_final.zip)
-  - File Detailed Data Description: MoP Ref2 DDD v3r5
-  - File Manual of Procedures: MoP v3r5
-- [Data Description Actual Generation per Generation Unit](https://transparencyplatform.zendesk.com/hc/en-us/articles/16648326220564-Actual-Generation-per-Generation-Unit-16-1-A)
-- [Data Description Actual Generation per Production Type](https://transparencyplatform.zendesk.com/hc/en-us/articles/16648290299284-Actual-Generation-per-Production-Type-16-1-B-C)
-
-### SMARD
-- [SMARD API Documentation](https://smard.api.bund.dev/)
-
-### Agora
-
-### MSDR
-- [MarkovRegression Model Documentation](https://www.statsmodels.org/stable/generated/statsmodels.tsa.regime_switching.markov_regression.MarkovRegression.html)
-- [Heteroskedasticity Explanation](https.www.google.com/search?q=heteroskedasticity&oq=heteroskedasticity&gs_lcrp=EgRlZGdlKgkIABBFGDkYgAQyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIGCAMQABgeMgYIBBAAGB4yBggFEAAYHjIGCAYQABgeMgYIBxAAGB7SAQczMzFqMGoxqAIAsAIA&sourceid=chrome&ie=UTF-8#fpstate=ive&vld=cid:63ab98e5,vid:ZIOnCoi1ZRw,st:0)
-- 
+## Download Links
+- [Git](https://git-scm.com/install/)
+- [Miniconda](https://www.anaconda.com/docs/getting-started/miniconda/main)
+- [Docker](https://docs.docker.com/get-started/get-docker/)
+- [Python](https://www.python.org/downloads/)

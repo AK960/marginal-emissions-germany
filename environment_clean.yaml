@@ -1,0 +1,27 @@
+name: mef-germany
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pandas
+  - numpy
+  - statsmodels
+  - scikit-learn
+  - click
+  - pyprojroot
+  - tqdm
+  - joblib
+  - matplotlib
+  - seaborn
+  - python-dotenv
+  - openpyxl
+  - pytz
+  - requests
+  - openpyxl
+  - pip:
+    - altair
+    - arch
+    - beautifulsoup4
+    - streamlit
