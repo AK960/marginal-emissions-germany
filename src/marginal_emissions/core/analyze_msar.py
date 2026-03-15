@@ -37,7 +37,7 @@ class MSARAnalyzer:
     def __init__(
         self,
         data,
-        max_lags=4,
+        max_lags=8,
         ic='bic',
         tso=None,
         year=None,
