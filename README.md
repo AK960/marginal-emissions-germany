@@ -4,23 +4,39 @@ This project contains a Python pipeline to compute marginal emission factors for
 ---
 ## Usage
 
-### 1. Data Preprocessing
+### 1. Data Fetching
+
+NOTE: The `mefh` command is not fully integrated. It allows for automated data fetching from the API, yet the obtained data is not used in the later analysis process. The data for the analysis is obtained from SMARD. The platform also provides an API so that this logic could be implemented to allow for enhanced automation of the entire analysis.
+
+The `fetch entsoe` command allows you to download data from the ENTSO-E API.
+```bash
+mef fetch entsoe [OPTIONS]
+```
+
+**Options:**
+* `--req-type`, `-rt`: The specific endpoint to query (`actual_generation_per_generation_unit` or `aggu`, `actual_generation_per_production_type` or `agpt`).
+* `--is-test`, `-t`: If set, fetches data for a single day.
+* `--area`, `-a`: The control area to fetch data for (`50hertz`, `amprion`, `tennet`, `transnetbw`).
+* `--start-date`, `-sd`: The start date for the data fetch (format: `yyyy-mm-dd`).
+* `--end-date`, `-ed`: The end date for the data fetch (format: `yyyy-mm-dd`).
+
+### 2. Data Preprocessing
 
 The `prep` command runs the entire preprocessing pipeline. It loads the raw data from `data/raw`, prepares the emissions and generation datasets, and saves the final processed files to `data/processed`.
 
 ```bash
-mef-tool prep [OPTIONS]
+mef prep [OPTIONS]
 ```
 
 **Options:**
 * `--skip-validation`: If set, the validation step after emission allocation is skipped.
 
-### 2. Data Analysis
+### 3. Data Analysis
 
 The `analysis run` command executes the MSAR (Markov-switching autoregression) analysis on the preprocessed data. You can filter the data by transmission system operator (TSO) and year. The results, including data files and plots, are saved to a structured directory in `results/`.
 
 ```bash
-mef-tool analysis run [OPTIONS]
+mef analysis run [OPTIONS]
 ```
 
 **Options:**
@@ -29,21 +45,42 @@ mef-tool analysis run [OPTIONS]
 * `-t`, `--is-test`: Flag to indicate a test run. This will save results to a separate `results/test/` directory.
 * `--num-iterations`: Number of sliding window iterations for the test run. Only used if `--is-test` is set. Defaults to 50.
 
-**Example (Normal Run):**
+### 4. Validation
+
+The `validation` commands are used to validate the results of the analysis.
+
+#### `validation run`
+Runs the main validation on the results for a specific TSO and year.
+
 ```bash
-# Run analysis for TenneT for 2023
-mef-tool analysis run --operator TenneT --year 2023
+mef validation run [OPTIONS]
 ```
 
-**Example (Test Run):**
+**Options:**
+* `--operator`, `-tso`: The TSO to validate.
+* `--year`, `-y`: The year to validate.
+* `--is-test`, `-t`: Whether to use test results.
+* `--num-iterations`: The number of iterations for the test run.
+
+#### `validation cross-regional`
+Runs a cross-regional validation test.
+
 ```bash
-# Run a test with 50 iterations on the Amprion 2024 dataset
-mef-tool analysis run --operator Amprion --year 2024 --is-test --num-iterations 50
+mef validation cross-regional [OPTIONS]
 ```
 
-### 3. Workflow Sequence Diagram
+**Options:**
+* `--is-test`, `-t`: Whether to use test results.
 
-The following diagram illustrates the complete workflow, from data preprocessing to analysis, including file interactions.
+### 5. Other Commands
+
+*   **`inspect dirs`**: Lists all subdirectories in a given path.
+*   **`synchtex`**: Synchronizes the analysis output with LaTeX files.
+*   **`listapis`**: Lists available APIs to fetch data from.
+
+### 6. Workflow Sequence Diagram
+
+The following diagram illustrates the complete workflow, from data preprocessing to analysis and validation, including file interactions.
 
 ```mermaid
 sequenceDiagram
@@ -51,9 +88,11 @@ sequenceDiagram
     participant CLI
     participant MEFPreprocessor
     participant MSARAnalyzer
+    participant MEFValidator
+    participant CrossRegionalValidator
     participant Files
 
-    User->>CLI: mef-tool prep
+    User->>CLI: mef prep
     CLI->>MEFPreprocessor: __init__()
     
     Files-->>MEFPreprocessor: Read (data/raw/*.csv)
@@ -73,7 +112,7 @@ sequenceDiagram
     MEFPreprocessor-->>CLI: Return results
     CLI-->>User: Log success/failure
 
-    User->>CLI: mef-tool analysis run --operator TenneT --year 2023
+    User->>CLI: mef analysis run --operator TenneT --year 2023
     CLI->>CLI: _get_analysis_files('TenneT', '2023')
     
     loop For each found file
@@ -101,6 +140,32 @@ sequenceDiagram
         MSARAnalyzer->>Files: Write Data (results/.../indicators.json)
     end
     CLI-->>User: Log success/failure
+
+    User->>CLI: mef validation run --operator TenneT --year 2023
+    CLI->>CLI: _get_validation_files('TenneT', '2023')
+    loop For each found file
+        Files-->>CLI: Read (results/.../mef_final.csv)
+        Files-->>CLI: Read (data/processed/final_*.csv)
+        Files-->>CLI: Read (data/raw/other/smard/*.csv)
+        CLI->>MEFValidator: __init__(data, tso, year, save_dir)
+        CLI->>MEFValidator: run_validation()
+        MEFValidator->>Files: Write Plots (results/.../validation/*.png)
+        MEFValidator->>Files: Write Data (results/.../validation/validation_summary_*.json)
+    end
+    CLI-->>User: Log success/failure
+
+    User->>CLI: mef validation cross-regional
+    CLI->>CrossRegionalValidator: __init__(is_test)
+    CLI->>CrossRegionalValidator: collect_results()
+    Files-->>CrossRegionalValidator: Read (results/.../validation/validation_summary_*.json)
+    CrossRegionalValidator->>CrossRegionalValidator: run_correlation_test()
+    CrossRegionalValidator->>CrossRegionalValidator: plot_correlation()
+    CrossRegionalValidator->>Files: Write Plots (results/.../validation/2.2_cross_regional_coal_correlation.png)
+    CrossRegionalValidator->>CrossRegionalValidator: update_individual_summaries()
+    Files-->>CrossRegionalValidator: Read (results/.../validation/validation_summary_*.json)
+    CrossRegionalValidator->>Files: Write Data (results/.../validation/validation_summary_*.json)
+    CrossRegionalValidator-->>CLI: Return results
+    CLI-->>User: Log success/failure
 ```
 
 ---
@@ -126,5 +191,5 @@ sequenceDiagram
 
 ### MSDR
 - [MarkovRegression Model Documentation](https://www.statsmodels.org/stable/generated/statsmodels.tsa.regime_switching.markov_regression.MarkovRegression.html)
-- [Heteroskedasticity Explanation](https://www.google.com/search?q=heteroskedasticity&oq=heteroskedasticity&gs_lcrp=EgRlZGdlKgkIABBFGDkYgAQyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIGCAMQABgeMgYIBBAAGB4yBggFEAAYHjIGCAYQABgeMgYIBxAAGB7SAQczMzFqMGoxqAIAsAIA&sourceid=chrome&ie=UTF-8#fpstate=ive&vld=cid:63ab98e5,vid:ZIOnCoi1ZRw,st:0)
+- [Heteroskedasticity Explanation](https.www.google.com/search?q=heteroskedasticity&oq=heteroskedasticity&gs_lcrp=EgRlZGdlKgkIABBFGDkYgAQyCQgAEEUYORiABDIHCAEQABiABDIHCAIQABiABDIGCAMQABgeMgYIBBAAGB4yBggFEAAYHjIGCAYQABgeMgYIBxAAGB7SAQczMzFqMGoxqAIAsAIA&sourceid=chrome&ie=UTF-8#fpstate=ive&vld=cid:63ab98e5,vid:ZIOnCoi1ZRw,st:0)
 - 
