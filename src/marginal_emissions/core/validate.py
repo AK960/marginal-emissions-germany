@@ -34,9 +34,7 @@ class MEFValidator:
         self.tso_display = "50Hertz" if tso == "50hertz" else tso.capitalize()
         
         # Validation Input
-        logger.info(f"Initialized validator for {self.tso_display} ({self.year}) with {len(self.df)} rows.")
-        logger.info(f"Validation results will be saved to: {self.save_dir}")
-
+        logger.info(f"Initialized MEFValidator instance.")
 
     # ____________________ Entrypoint ____________________#
     def run_validation(self):

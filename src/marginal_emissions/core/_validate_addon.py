@@ -61,7 +61,8 @@ class CrossRegionalValidator:
             
         return collected_data
 
-    def run_correlation_test(self, results_data: list[dict]) -> float:
+    @staticmethod
+    def run_correlation_test(results_data: list[dict]) -> float:
         """
         Calculates the Pearson correlation between coal share and average MEF.
         """
@@ -70,9 +71,10 @@ class CrossRegionalValidator:
         logger.info(f"Test 2.2 (Cross-Regional Correlation): Pearson correlation between Coal Share and Avg MEF: {correlation:.4f}")
         return correlation
 
-    def plot_correlation(self, results_data: list[dict], correlation: float):
+    @staticmethod
+    def plot_correlation(results_data: list[dict], correlation: float):
         """
-        Creates a scatter plot to visualize the correlation.
+        Creates a scatter plot and saves it to each individual validation directory.
         """
         df = pd.DataFrame(results_data)
 
@@ -94,15 +96,17 @@ class CrossRegionalValidator:
             
             fig.tight_layout()
             
-            filename = "2.2_cross_regional_coal_correlation.png" if not self.is_test else "2.2_cross_regional_coal_correlation_test.png"
-            plot_path = self.save_dir / filename
-            try:
-                fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
-                logger.info(f"Saved cross-regional correlation plot.")
-            except Exception as e:
-                logger.error(f"Failed to save cross-regional plot: {e}")
-            finally:
-                plt.close(fig)
+            # Save the same plot to each validation directory
+            for item in results_data:
+                target_dir = Path(item['file_path']).parent
+                plot_path = target_dir / f"2.2_cross_regional_coal_correlation.png"
+                try:
+                    fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
+                    logger.info(f"Saved cross-regional correlation plot to {target_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to save cross-regional plot to {target_dir}: {e}")
+            
+            plt.close(fig)
 
     @staticmethod
     def update_individual_summaries(results_data: list[dict], correlation: float):
@@ -111,13 +115,16 @@ class CrossRegionalValidator:
         """
         logger.info("Updating individual validation summaries with cross-regional results...")
         
+        # Create a clean version of the results data without the file_path for the JSON output
+        clean_results_data = [{k: v for k, v in item.items() if k != 'file_path'} for item in results_data]
+
         cross_regional_result = {
             'Test 2.2': {
                 'Description': 'Correlation with Coal Share',
                 'Result': {
                     'Pearson Correlation': f"{correlation:.4f}"
                 },
-                'Data': results_data
+                'Data': clean_results_data
             }
         }
 

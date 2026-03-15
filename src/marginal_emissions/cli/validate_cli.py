@@ -170,12 +170,12 @@ def _run_validation(file_path: Path, is_test: bool):
         
         validator.run_validation()
 
-        logger.info(f"Finished validation for {tso_display} in {year}")
+        logger.info(f"Finished validation for {tso_display} in {year}\n")
 
     except Exception as e:
         logger.error(f"Validation for {file_path.name} failed with error: {e}")
 
-@click.group(name='validate')
+@click.group(name='validation')
 def validation_group():
     """Run validation for single or all result dataframes."""
     pass
