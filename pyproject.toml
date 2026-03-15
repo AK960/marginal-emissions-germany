@@ -1,38 +1,5 @@
-#.SYNOPSIS
-#    Creating installable src package.
-#
-#.DESCRIPTION
-#    This file makes it possible to install the package in the virtual environment and make it available globally for
-#    scripts and notebooks to use.
-#    Priorly, the setup.py fulfilled this purpose but is deprecated in pip 25.3. Thus, this will be fulfilled here.
-#
-#.USAGE
-#    For the installation to work correctly, the __init__.py must contain the import of the functions / modules within
-#    the package, i.e., "from .utils import say_hello".
-#    To install the package, run "pip install -e ." in the terminal with the respective env activated.
-#    The desired script / playbook can now import the module as "import marginal_emissions as me" or alternatively
-#    "from marginal_emissions import utils"
-#
-#.VERSIONS
-#    [0.1][2025-09-04] Initial setup of environment and dependencies for installation of package "marginal_emissions"
-#
-#.EXAMPLE
-#    [pyproject.toml]
-#    --> see bottom
-#
-#    [src/helper.py]
-#    def say_hello():
-#       print("Hello from marginal_emissions!")
-#
-#    [src/__init__.py]
-#    from .utils import say_hello
-#
-#    [terminal]
-#    pip install -e .
-#
-#    [scripts/test_editableInstallation.py]
-#    import marginal_emissions as me
-#    me.say_hello()
+# Project setup file
+
 [build-system]
 requires = ["setuptools>=64.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -40,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "marginal-emissions-germany"
 version = "0.1"
-description = "Tool to _compute_mef a MEF signal for the German electricity mix"
+description = "Tool to compute a MEF signal for the German electricity mix"
 authors = [
     {name = "Alexander Kleinwächter", email = "a.kleinwaechter97@gmail.com"}
 ]
