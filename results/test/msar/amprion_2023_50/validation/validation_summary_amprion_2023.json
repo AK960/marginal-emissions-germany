@@ -1,0 +1,70 @@
+{
+    "Test 1.1": {
+        "Description": "Non-Negativity",
+        "Result": {
+            "Pct Negative MEF": "0.00%"
+        }
+    },
+    "Test 1.2": {
+        "Description": "Max Carbon Intensity",
+        "Result": {
+            "Pct Exceeding Max": "0.00%"
+        }
+    },
+    "Test 2.1": {
+        "Description": "Empirical Annual Averages",
+        "Result": {
+            "Empirical Annual MEF (g/kWh)": "827.24",
+            "Model Annual Average MEF (g/kWh)": "881.71",
+            "Mean Absolute Percentage Error (%)": "6.18",
+            "R-squared of Empirical MEF": "0.7887"
+        }
+    },
+    "Test 2.2": {
+        "Description": "Correlation with Coal Share",
+        "Result": {
+            "Pearson Correlation": "-0.3331"
+        },
+        "Data": [
+            {
+                "tso": "amprion",
+                "year": "2024",
+                "label": "Amprion-2024",
+                "coal_share": 37.4,
+                "avg_mef": 679.31
+            },
+            {
+                "tso": "tennet",
+                "year": "2023",
+                "label": "Tennet-2023",
+                "coal_share": 3.49,
+                "avg_mef": 822.97
+            },
+            {
+                "tso": "amprion",
+                "year": "2023",
+                "label": "Amprion-2023",
+                "coal_share": 33.62,
+                "avg_mef": 881.71
+            }
+        ]
+    },
+    "Test 3": {
+        "Description": "Net-Demand Patterns",
+        "Indicators": {
+            "Median MEF (Bottom 20% Net-Demand)": "892.75",
+            "Median MEF (Top 20% Net-Demand)": "871.97",
+            "Coal Share": "33.62%"
+        },
+        "Hypothesis 3.1 (Coal Region)": {
+            "Result": "Passed",
+            "Expectation": "High Demand MEF < Low Demand MEF",
+            "Actual": "871.97 < 892.75"
+        },
+        "Hypothesis 3.2 (No-Coal Region)": {
+            "Result": "Failed",
+            "Expectation": "High Demand MEF > Low Demand MEF",
+            "Actual": "871.97 > 892.75"
+        }
+    }
+}
