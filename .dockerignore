@@ -1,3 +1,8 @@
+# Exclude large and unnecessary files for build ...
+data/
+notebooks/
+results/**/*.csv
+
 # Git
 .git
 .gitignore
@@ -11,6 +16,7 @@ Dockerfile
 .vscode
 *.pyc
 __pycache__/
+.pytest_cache
 .DS_Store
 
 # Local environment
@@ -23,8 +29,3 @@ venv/
 build/
 dist/
 *.egg-info
-
-# Exclude large and unnecessary files for build ...
-data/
-notebooks/
-results/**/*.csv
