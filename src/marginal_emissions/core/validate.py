@@ -99,54 +99,107 @@ class MEFValidator:
 
     def _generate_bounds_plot(self):
         """
-        Plots the MEF with its upper bound and labels the source of the bound.
+        Visualizes the results from test 1.1 and 1.2. The function plots the MEF with its upper and lower bound and
+        includes percentages of times the MEF exceeds the bounds.
         """
         if 'mef_g_kWh' not in self.df.columns or 'max_carbon_intensity' not in self.df.columns:
             logger.warning("MEF data or max carbon intensity not available for plotting.")
             return
 
         df_plot = self.df.copy()
-        
-        # For clarity, limit the plot to a specific period, e.g., one week
-        if len(df_plot) > 672: # 1 week of 15-min data
-            df_plot = df_plot.iloc[:672]
+
+        # Calculate exceedance percentages
+        total_rows = len(df_plot.dropna(subset=['mef_g_kWh', 'max_carbon_intensity']))
+        if total_rows > 0:
+            pct_negative = (df_plot['mef_g_kWh'] < 0).sum() / total_rows * 100
+            pct_exceeding = (df_plot['mef_g_kWh'] > df_plot['max_carbon_intensity']).sum() / total_rows * 100
+        else:
+            pct_negative = pct_exceeding = 0.0
+
+        # Create a numerical ID map and a prettified label map for unique sources
+        unique_sources = df_plot['max_carbon_source'].dropna().unique()
+        unique_sources = [s for s in unique_sources if s != 'None']
+
+        # Color coding for each source
+        assigned_colors = {
+            'lignite_generation': 'tab:red',
+            'hard_coal_generation': 'tab:orange',
+            'fossile_gas_generation': 'tab:green'
+        }
+        color_palette = ['tab:purple', 'tab:brown', 'tab:pink', 'tab:gray']  # Fallback
+
+        source_color_map = {}
+        source_label_map = {}
+        for i, source in enumerate(unique_sources):
+            # Prettify the label
+            source_label_map[source] = str(source).replace('_generation', '').replace('_', ' ').title()
+
+            # Use assigned color if available, else pick from fallback palette
+            color = assigned_colors.get(source, color_palette[i % len(color_palette)])
+            source_color_map[source] = color
 
         # noinspection PyTypeChecker
         with plt.style.context('default'):
             fig, ax = plt.subplots(figsize=(12, 6))
-            
-            # Plot the computed MEF
-            ax.plot(df_plot.index, df_plot['mef_g_kWh'], label='Computed MEF (15-min)', color='tab:blue', alpha=0.7, linewidth=1.2)
-            
-            # Plot the upper bound
-            ax.plot(df_plot.index, df_plot['max_carbon_intensity'], label='Upper Bound (Max Intensity)', color='tab:orange', linestyle='--', linewidth=1.5)
 
-            # Add text labels for the source of the upper bound
+            # Plot the computed MEF (tab:blue)
+            ax.plot(df_plot.index, df_plot['mef_g_kWh'], label='Computed MEF (15-min)', color='tab:blue', alpha=0.7,
+                    linewidth=1.2)
+
+            # Find start and end points of each contiguous block of a specific source
             df_plot['source_change'] = df_plot['max_carbon_source'].ne(df_plot['max_carbon_source'].shift())
             source_blocks = df_plot[df_plot['source_change']].index
 
             for i, start_block in enumerate(source_blocks):
-                end_block = source_blocks[i + 1] if i + 1 < len(source_blocks) else df_plot.index[-1]
-                
-                # Get the source name and y-position for the label
                 source_name = df_plot.loc[start_block, 'max_carbon_source']
                 if source_name == 'None':
                     continue
-                
-                y_pos = df_plot.loc[start_block, 'max_carbon_intensity']
-                
-                # Find the middle of the block for the x-position
-                block_center_idx = int((df_plot.index.get_loc(start_block) + df_plot.index.get_loc(end_block)) / 2)
-                x_pos = df_plot.index[block_center_idx]
-                
-                # Add the text label
-                ax.text(x_pos, y_pos + 5, source_name, ha='center', va='bottom', fontsize=8, color='tab:orange', alpha=0.9)
 
-            ax.axhline(0, color='black', linewidth=1, linestyle='--')
-            ax.set_title(f"MEF Bounds Validation - {self.tso_display} ({self.year})")
+                # Use iloc to prevent off-by-one overlap into the next segment
+                start_idx = df_plot.index.get_loc(start_block)
+                if i + 1 < len(source_blocks):
+                    end_block = source_blocks[i + 1]
+                    end_idx = df_plot.index.get_loc(end_block)
+                    # Excludes end_idx, preventing the drop to 0
+                    segment_intensity = df_plot['max_carbon_intensity'].iloc[start_idx:end_idx]
+                else:
+                    segment_intensity = df_plot['max_carbon_intensity'].iloc[start_idx:]
+
+                color = source_color_map[source_name]
+                ax.plot(segment_intensity.index, segment_intensity.values,
+                        color=color, linestyle='--', linewidth=1.5)
+
+            # Plot the lower bound (black dashed)
+            ax.axhline(0, color='black', linewidth=1, linestyle='--', label='Lower Bound (0)')
+
+            # --- CUSTOM LEGEND ---
+            from matplotlib.lines import Line2D
+
+            legend_elements = [
+                Line2D([0], [0], color='tab:blue', alpha=0.7, linewidth=1.2, label='Computed MEF (15-min)'),
+                Line2D([0], [0], color='black', linewidth=1, linestyle='--', label='Lower Bound (0)')
+            ]
+
+            for source, label in source_label_map.items():
+                color = source_color_map[source]
+
+                # Fetch the actual intensity value to display in the legend
+                intensity_val = df_plot.loc[df_plot['max_carbon_source'] == source, 'max_carbon_intensity'].median()
+
+                # Entry text example: "Upper Bound (Hard Coal: 1050 g/kWh)"
+                element = Line2D([0], [0], color=color, linestyle='--', linewidth=1.5,
+                                 label=f'Upper Bound ({label}: {intensity_val:.0f} gCO₂/kWh)')
+                legend_elements.append(element)
+
+            ax.legend(handles=legend_elements, loc='best')
+
+            title_text = (
+                f"MEF Bounds Validation - {self.tso_display} ({self.year})\n"
+                f"| Exceeds Upper Bound: {pct_exceeding:.2f}% | Below Zero: {pct_negative:.2f}% |"
+            )
+            ax.set_title(title_text)
             ax.set_xlabel("Time")
-            ax.set_ylabel("Marginal Emission Factor (gCO2/kWh)")
-            ax.legend()
+            ax.set_ylabel("Marginal Emission Factor (gCO₂/kWh)")
             ax.grid(True, alpha=0.3)
             fig.autofmt_xdate(rotation=45)
 
@@ -155,16 +208,18 @@ class MEFValidator:
             plot_path = self.save_dir / f"1_mef_bounds_plot_{self.tso}_{self.year}.png"
             try:
                 fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
-                logger.info(f"Saved MEF bounds plot.")
+                logger.info(f"Saved MEF bounds plot with clean stepped line and intensity values in legend.")
             except Exception as e:
                 logger.error(f"Failed to save MEF bounds plot: {e}")
             finally:
                 plt.close(fig)
 
-    # Rubric 2
+    # Rubric 2: Empirical Annual MEF (only test 2.1, test 2.2 is cross-regional and thus implemented in CrossRegionalValidator)
     def _test_empirical_annual_mef(self):
         """
-        2.1: Compares the model's annual average MEF with an empirical annual MEF derived from a simple regression.
+        Test 2.1: Across grid regions, the empirical annual average derivative of emissions with respect to load
+        is expected to be equal to annual average MEFs.
+        Compares the model's annual average MEF with an empirical annual MEF derived from a simple regression.
         """
         if 'delta_generation' not in self.df.columns or 'delta_emissions' not in self.df.columns:
             logger.warning("Columns 'delta_generation' or 'delta_emissions' not found, skipping Test 2.1.")
@@ -213,7 +268,9 @@ class MEFValidator:
         self._plot_empirical_annual_mef(df_reg, model)
 
     def _plot_empirical_annual_mef(self, data, model):
-        """Plots the scatter plot for the Empirical Annual MEF regression."""
+        """
+        Plots the scatter plot for the Empirical Annual MEF regression from test 2.1.
+        """
         # noinspection PyTypeChecker
         with plt.style.context('default'):
             fig, ax = plt.subplots(figsize=(8, 5))
@@ -246,20 +303,12 @@ class MEFValidator:
             finally:
                 plt.close(fig)
 
-    # Rubric 3: Expected net-demand (residual load) temporal patterns (it is expected that MEFs will differ during periods of low vs. high net-demand)
-    def _get_coal_share(self):
-        """Hilfsfunktion: Berechnet den prozentualen Kohleanteil am Jahresmix."""
-        coal_cols = [col for col in ['lignite_generation', 'hard_coal_generation'] if col in self.df.columns]
-        if not coal_cols or 'total_generation_all' not in self.df.columns:
-            logger.warning("Could not calculate coal share: 'total_generation_all' or coal columns are missing.")
-            return 0
-        coal_gen = self.df[coal_cols].sum().sum()
-        total_gen = self.df['total_generation_all'].sum()
-        return coal_gen / total_gen if total_gen > 0 else 0
-
+    # Rubric 3: Expected net-demand (residual load) temporal patterns
     def _test_net_demand_patterns(self):
         """
-        Tests and reports on MEF behavior for both coal and non-coal region hypotheses.
+        Test 3.1: MEFs are expected to be lower during the 20% of peak net-demand compared to the 20% of lowest net-demand in regions with significant coal.
+        Test 3.2: MEFs are expected to be higher during the 20% of peak net-demand compared to the 20% of lowest net-demand in regions without coal.
+        The function reports on MEF behavior for both coal and non-coal region hypotheses.
         """
         if 'net_demand' not in self.df.columns or 'mef_g_kWh' not in self.df.columns:
             logger.warning("Column 'net_demand' or 'mef_g_kWh' is missing. Skipping Net-Demand tests.")
@@ -305,10 +354,21 @@ class MEFValidator:
         # 5. Generate plot
         self._generate_net_demand_plot(q20, q80)
 
+    def _get_coal_share(self):
+        """
+        Computes the coal share for the region.
+        """
+        coal_cols = [col for col in ['lignite_generation', 'hard_coal_generation'] if col in self.df.columns]
+        if not coal_cols or 'total_generation_all' not in self.df.columns:
+            logger.warning("Could not calculate coal share: 'total_generation_all' or coal columns are missing.")
+            return 0
+        coal_gen = self.df[coal_cols].sum().sum()
+        total_gen = self.df['total_generation_all'].sum()
+        return coal_gen / total_gen if total_gen > 0 else 0
 
     def _generate_net_demand_plot(self, q20, q80):
         """
-        Erstellt einen Boxplot zum Vergleich der MEF-Verteilungen.
+        Creates a box plot to compare the MEF distributions.
         """
         low_df = self.df[self.df['net_demand'] <= q20][['mef_g_kWh']].copy()
         low_df['Period'] = 'Bottom 20%\n(Low Net-Demand)'
@@ -401,6 +461,7 @@ class MEFValidator:
             finally:
                 plt.close(fig)
 
+    # ____________________ Validation Summary ____________________#
     def _save_summary_as_json(self):
         """
         Saves the validation test results to a JSON file.

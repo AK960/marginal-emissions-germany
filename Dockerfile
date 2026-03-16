@@ -18,6 +18,9 @@ RUN conda env create -f requirements.yaml
 # Copy the rest of the application's code
 COPY . .
 
+# Find zipped files after cloning and unzips them in the same dir
+RUN find results/msar/ -name "coefficients.csv.gz" -exec gunzip {} +
+
 # Install the project in editable mode using the pip from the 'ma' environment.
 # This makes the 'mef-tool' command available within the Conda environment.
 RUN conda run -n ma pip install -e .

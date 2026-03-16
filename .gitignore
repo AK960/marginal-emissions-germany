@@ -14,11 +14,11 @@ develop-eggs/
 # Tests Dir
 tests/
 
-# Gem Markdown
-#GEMINI.md
-
-# Example files
-**/example_*
-
-# Legacy Notebooks
+# Legacy Files / Dirs
 **/legacy/
+
+# Large files
+# Ignore
+results/msar/**/coefficients.csv
+# Allow
+!results/msar/**/coefficients.csv.gz

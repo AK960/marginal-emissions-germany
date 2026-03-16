@@ -7,7 +7,7 @@ from pathlib import Path
 
 from marginal_emissions import logger
 from marginal_emissions.core.validate import MEFValidator
-from marginal_emissions.core._validate_addon import CrossRegionalValidator
+from marginal_emissions.core.validate_cross_regional import CrossRegionalValidator
 from marginal_emissions.vars import RESULTS_DIR, MAX_EF_DICT, DATA_DIR
 
 import numpy as np
@@ -72,7 +72,14 @@ def _load_residual_load(tso: str, year: str) -> pd.DataFrame | None:
 
         # Clean and convert net_demand
         if df_smard['net_demand'].dtype == 'object':
-            df_smard['net_demand'] = df_smard['net_demand'].str.replace('.', '', regex=False).str.replace(',', '.', regex=False).astype(float)
+            cleaned = (
+                df_smard['net_demand']
+                .str.strip()
+                .replace('-', pd.NA)
+                .str.replace('.', '', regex=False)
+                .str.replace(',', '.', regex=False)
+            )
+            df_smard['net_demand'] = pd.to_numeric(cleaned, errors='coerce')
         
         return df_smard[['net_demand']]
 
@@ -138,14 +145,14 @@ def _run_validation(file_path: Path, is_test: bool):
             raise FileNotFoundError(f"Could not find processed source file for {tso} {year}.")
         df_processed = pd.read_csv(processed_file_path, index_col='datetime', parse_dates=True)
 
-        # Define columns needed for validation
-        fuel_cols = list(MAX_EF_DICT.keys())
-        validation_cols = [
-            'total_generation_all', 'lignite_generation', 'hard_coal_generation', 'total_emissions', 'total_generation'
+        # Define all potential columns that might be needed
+        all_potential_cols = list(MAX_EF_DICT.keys()) + [
+            'total_generation_all', 'total_emissions', 'total_generation'
         ]
-        # Combine and remove duplicates
-        cols_to_use = list(set(fuel_cols + validation_cols))
+        # Dynamically filter for columns that actually exist in df_processed
+        cols_to_use = [col for col in all_potential_cols if col in df_processed.columns]
 
+        # Merge only the existing columns
         df = pd.merge(df_results, df_processed[cols_to_use], left_index=True, right_index=True, how='inner')
 
         df_residual = _load_residual_load(tso, year)

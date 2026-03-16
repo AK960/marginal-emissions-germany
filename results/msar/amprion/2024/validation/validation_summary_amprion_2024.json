@@ -1,0 +1,105 @@
+{
+    "Test 1.1": {
+        "Description": "Non-Negativity",
+        "Result": {
+            "Pct Negative MEF": "0.02%"
+        }
+    },
+    "Test 1.2": {
+        "Description": "Max Carbon Intensity",
+        "Result": {
+            "Pct Exceeding Max": "0.00%"
+        }
+    },
+    "Test 2.1": {
+        "Description": "Empirical Annual Averages",
+        "Result": {
+            "Empirical Annual MEF (g/kWh)": "775.35",
+            "Model Annual Average MEF (g/kWh)": "619.68",
+            "Mean Absolute Percentage Error (%)": "25.12",
+            "R-squared of Empirical MEF": "0.6886"
+        }
+    },
+    "Test 2.2": {
+        "Description": "Correlation with Coal Share",
+        "Result": {
+            "Pearson Correlation": "0.6806"
+        },
+        "Data": [
+            {
+                "tso": "tennet",
+                "year": "2024",
+                "label": "Tennet-2024",
+                "coal_share": 4.29,
+                "avg_mef": 486.43
+            },
+            {
+                "tso": "tennet",
+                "year": "2023",
+                "label": "Tennet-2023",
+                "coal_share": 6.47,
+                "avg_mef": 554.63
+            },
+            {
+                "tso": "50hertz",
+                "year": "2024",
+                "label": "50hertz-2024",
+                "coal_share": 31.3,
+                "avg_mef": 822.87
+            },
+            {
+                "tso": "50hertz",
+                "year": "2023",
+                "label": "50hertz-2023",
+                "coal_share": 35.07,
+                "avg_mef": 929.35
+            },
+            {
+                "tso": "amprion",
+                "year": "2024",
+                "label": "Amprion-2024",
+                "coal_share": 34.63,
+                "avg_mef": 619.68
+            },
+            {
+                "tso": "amprion",
+                "year": "2023",
+                "label": "Amprion-2023",
+                "coal_share": 37.68,
+                "avg_mef": 647.85
+            },
+            {
+                "tso": "transnetbw",
+                "year": "2024",
+                "label": "Transnetbw-2024",
+                "coal_share": 21.9,
+                "avg_mef": 675.1
+            },
+            {
+                "tso": "transnetbw",
+                "year": "2023",
+                "label": "Transnetbw-2023",
+                "coal_share": 24.2,
+                "avg_mef": 697.38
+            }
+        ]
+    },
+    "Test 3": {
+        "Description": "Net-Demand Patterns",
+        "Indicators": {
+            "Median MEF (Bottom 20% Net-Demand)": "650.13",
+            "Median MEF (Top 20% Net-Demand)": "568.96",
+            "Coal Share": "34.63%"
+        },
+        "Hypothesis 3.1 (Coal Region)": {
+            "Result": "Passed",
+            "Expectation": "High Demand MEF < Low Demand MEF",
+            "Actual": "568.96 < 650.13"
+        },
+        "Hypothesis 3.2 (No-Coal Region)": {
+            "Result": "Failed",
+            "Expectation": "High Demand MEF > Low Demand MEF",
+            "Actual": "568.96 > 650.13"
+        }
+    }
+}
