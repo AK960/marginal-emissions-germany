@@ -1,41 +1,59 @@
-# Use a Conda base image which has Conda pre-installed
-FROM continuumio/miniconda3
+# Base Image
+FROM ubuntu:22.04
 
-# Set the locale to prevent Unicode errors
-ENV LANG C.UTF-8
-ENV LC_ALL C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
-# Set the working directory
+# Install some system tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    git \
+    vim \
+    curl \
+    ca-certificates \
+    bash-completion \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install miniconda
+RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
+    /bin/bash ~/miniconda.sh -b -p /opt/conda && \
+    rm ~/miniconda.sh && \
+    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    echo ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate mef-germany" >> ~/.bashrc
+
+# Path to conda
+ENV PATH="/opt/conda/bin:${PATH}"
+
+# Deactivate conda base activation
+RUN conda config --set auto_activate false
+
 WORKDIR /app
 
-# Copy the environment file
+# Create conda environment with dependencies
 COPY requirements.yaml .
 
-# Create the Conda environment from the file.
-# This will create an environment named 'ma' as specified in the .yaml file.
+# Must accept terms
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 RUN conda env create -f requirements.yaml
 
-# Copy the rest of the application's code
+# Copy code and unpack zipped files
 COPY . .
-
-# Find zipped files after cloning and unzips them in the same dir
 RUN find results/msar/ -name "coefficients.csv.gz" -exec gunzip {} +
 
-# Install the project in editable mode using the pip from the 'ma' environment.
-# This makes the 'mef-tool' command available within the Conda environment.
-RUN conda run -n ma pip install -e .
+# Install cli tool
+RUN conda run -n mef-germany pip install --root-user-action=ignore -e .
 
-# --- Entrypoint Configuration ---
-# This wrapper script ensures that any command runs within the activated 'ma' environment.
-# This is especially useful for the interactive shell.
-RUN echo '#!/bin/sh' > /entrypoint.sh && \
+# Create entrypoint-script to load the environment
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'eval "$(conda shell.bash hook)"' >> /entrypoint.sh && \
-    echo 'conda activate ma' >> /entrypoint.sh && \
+    echo 'conda activate mef-germany' >> /entrypoint.sh && \
     echo 'exec "$@"' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
-
-# Set the entrypoint to our wrapper script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Set the default command to show the help message for your tool
-CMD ["mef", "--help"]
+# Start Bash by default
+CMD ["/bin/bash"]

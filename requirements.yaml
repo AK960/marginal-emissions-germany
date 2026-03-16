@@ -238,7 +238,7 @@ dependencies:
       - beautifulsoup4==4.14.2
       - blinker==1.9.0
       - cachetools==6.2.6
-      - click==8.3.0
+      - click==8.3.1
       - datetime==6.0
       - de-smard==0.1.0
       - dotenv==0.9.9

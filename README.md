@@ -62,11 +62,31 @@ This step builds the container image with all necessary dependencies. It only ne
 The following steps will mount the project files into the container, synch them with the local filesystem, and start an interactive shell within the container.
 
 5.  **In your terminal, from the project's root directory, run following command**:
-
-    ```bash
-    docker run --rm -it -v ./data:/app/data -v ./results:/app/results mef-germany sh
-    ```
-    *This will start the interactive shell within the container and change the command prompt e.g. to `/app #`.*
+   - Either start the container this way with the `--rm` tag, which stops and removes the container after closing the session.
+     ```bash
+     docker run --rm -it -v ./data:/app/data -v ./results:/app/results mef-germany bash
+     ```
+   - By using the `-d` tag the container is started in the background and keeps running after exiting.
+     ```bash
+     # Start the container and mount the directories
+     docker run -d -it --name mef-germany -v ./data:/app/data -v ./results:/app/results mef-germany bash
+     # Access the container
+     docker exec -it mef-germany bash
+     ```
+     - Since the container is now running in the background, it can be manually started and stopped. For this, the container name is necessary.
+     ```bash
+     # Check running and existing containers (-a)
+     docker ps
+     docker ps -a
+     # Start and stop
+     docker start mef-germany
+     docker stop mef-germany
+     ```
+     - The container can now be manually removed using its name.
+     ```bash
+     docker rm -f mef-germany
+     ```
+*This will start the interactive shell within the container and change the command prompt e.g. to `/app #`.*
 
 6.  **Execute `mef`-tool commands** as needed. For example:
     ```bash

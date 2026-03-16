@@ -6,16 +6,17 @@ from marginal_emissions.cli.listapis_cli import listapis_group
 from marginal_emissions.cli.fetch_cli import fetch_group
 from marginal_emissions.cli.preprocess_cli import prep
 from marginal_emissions.cli.analyze_cli import analysis_group
+from importlib.metadata import version
 
 @click.group()
-@click.version_option(version="1.0.0")
-@click.option('--verbose', '-v', is_flag=True, help='Ausführliche Ausgabe')
+@click.version_option(version=version("marginal-emissions-germany"))
+@click.option('--verbose', '-v', is_flag=True, help='Extended Output')
 @click.pass_context
 def cli(ctx, verbose):
     """
     Marginal-Emissions CLI Tool
 
-    Use 'mef-tool <command> --help' for more information.
+    Use 'mef <command> --help' for more information.
     """
     ctx.ensure_object(dict)
     ctx.obj = {'VERBOSE': verbose}

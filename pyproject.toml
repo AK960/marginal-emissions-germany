@@ -19,7 +19,7 @@ dependencies = [ # For adding installation dependencies of the package later on
 ]
 
 [project.scripts]
-mef = "marginal_emissions.cli._init_cli:cli"
+mef = "marginal_emissions.__init_cli__:cli"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

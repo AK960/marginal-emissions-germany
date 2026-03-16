@@ -1,4 +1,4 @@
-﻿"""
+"""
 CLI command for fetching data from an API.
 """
 
