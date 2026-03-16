@@ -42,8 +42,8 @@ RUN conda env create -f requirements.yaml
 
 # Copy code and unpack zipped files
 COPY . .
-RUN find results/msar/ -name "coefficients.csv.gz" -exec gunzip {} +
-
+RUN find results/msar/ -name "*.csv.gz" -exec gunzip -f {} + && \
+    find results/msar/ -name "*.csv.gz" -delete
 # Install cli tool
 RUN conda run -n mef-germany pip install --root-user-action=ignore -e .
 
