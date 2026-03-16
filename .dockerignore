@@ -1,7 +1,11 @@
-# Exclude large and unnecessary files for build ...
+# Exclude large and unnecessary files
 data/
 notebooks/
 results/**/*.csv
+results/autocorrelation/
+results/legacy/
+results/figures/
+results/test/
 
 # Git
 .git
