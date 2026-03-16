@@ -5,27 +5,27 @@ To capture the non-linear and regime-dependent behavior of the electricity marke
 
 ## Project Structure
 - `src/marginal_emissions/`: Main package.
-    - `core/`: Core logic for preprocessing (`preprocess.py`), MSAR modeling (`analyze_msar.py`), and validation (`validate.py`).
     - `cli/`: CLI implementation using Click.
-        - `_init_cli.py`: Entry point for the `mef` command.
+        - `__init_cli__.py`: Entry point for the `mef` command.
         - `preprocess_cli.py`, `analyze_cli.py`, etc.: Individual command implementations.
-    - `clients/`: API clients for data fetching (ENTSO-E, SMARD).
-    - `vars.py`: Configuration, environment variables, and data mappings.
+    - `clients/`: API clients for data fetching (ENTSO-E, SMARD) – not integrated!
+    - `core/`: Core logic for preprocessing (`preprocess.py`), MSAR modeling (`analyze_msar.py`), and validation (`validate.py`).
     - `utils/`: Helper functions.
+    - `vars.py`: Configuration, environment variables, and data mappings.
 - `data/`:
     - `raw/`: Original CSV files from external sources.
     - `interim/`: Intermediate processing steps (UTC-converted and merged data).
     - `processed/`: Final datasets ready for MSAR analysis.
 - `results/`: Output directory for analysis results.
     - `msar/`: Final coefficients, plots, and indicators for each TSO and year.
-    - `figures/`: Preprocessing and validation plots.
+    - `figures/`: Interim plots from workflow actions.
     - `test/`: Results from test runs (e.g., sliding window iterations).
-- `notebooks/`: Jupyter notebooks for exploratory data analysis (EDA), testing, and validation.
+- `notebooks/`: Jupyter notebooks for exploration and testing purposes.
 ---
 
 ## Docker-Based Workflow
 
-This guide describes the complete workflow from cloning the repository to running the analysis in a containerized environment. This method is recommended as it guarantees a consistent setup across all platforms (Windows, macOS, and Linux).
+This guide describes the complete workflow from cloning the repository to running the analysis in a containerized environment. With this method, the results can be replicated on any platform.
 
 ### Prerequisites
 - **Git**: Required to clone the repository.
@@ -45,13 +45,13 @@ This guide describes the complete workflow from cloning the repository to runnin
     cd marginal-emissions-germany
     ```
 
-3.  **Prepare Data**: Place your raw data files into the `data/raw/` directory. The project expects specific subdirectories and file structures as defined in `src/marginal_emissions/vars.py`. By default, the input data for the years 2023 and 2024 is already provided within the `data/raw/`, `data/interim/`, and `data/processed/` directories.
+3.  **Prepare Data**: Place the raw data files into the `data/raw/` directory. The project expects specific subdirectories, file structures, and naming conventions as defined in `src/marginal_emissions/vars.py`. By default, the input data for the years 2023 and 2024 is already provided within the `data/raw/`, `data/interim/`, and `data/processed/` directories.
 
 ### Step 2: Build the Docker Image (One-Time Setup)
 
-This step builds the container image with all necessary dependencies. It only needs to be run once per machine, or again if you change the `Dockerfile` or `requirements.yaml`.
+This step builds the container image with all necessary dependencies. It only needs to be run once per machine, or on change if the `Dockerfile` or `requirements.yaml` are changed.
 
-1.  **From the project's root directory, run the build command**:
+4.  **From the project's root directory, run the build command**:
     ```bash
     docker build -t mef-germany .
     ```
@@ -59,17 +59,16 @@ This step builds the container image with all necessary dependencies. It only ne
 
 ### Step 3: Run the Interactive Shell & Analysis
 
-This is the standard way to work with the tool. It starts a shell inside the container with your project files mounted.
+The following steps will mount the project files into the container, synch them with the local filesystem, and start an interactive shell within the container.
 
-1.  **In your terminal, from the project's root directory, run the appropriate command for your system**:
+5.  **In your terminal, from the project's root directory, run following command**:
 
-    -   **Linux / macOS / Windows (PowerShell)**:
-        ```bash
-        docker run --rm -it -v ./data:/app/data -v ./results:/app/results mef-germany sh
-        ```
-    - Your terminal prompt will change (e.g., to `/app #`), indicating you are now inside the container.
+    ```bash
+    docker run --rm -it -v ./data:/app/data -v ./results:/app/results mef-germany sh
+    ```
+    *This will start the interactive shell within the container and change the command prompt e.g. to `/app #`.*
 
-2.  **Execute `mef-tool` commands** as needed. For example:
+6.  **Execute `mef`-tool commands** as needed. For example:
     ```bash
     # Run the full preprocessing pipeline
     mef prep
@@ -78,9 +77,9 @@ This is the standard way to work with the tool. It starts a shell inside the con
     mef analysis run --operator 50Hertz --year 2023
     ```
 
-3.  **Accessing Results**: The `-v` flag in the `docker run` command creates a live link between the container's directories and the corresponding directories on your local machine. **Any files (plots, CSVs) generated in the container will instantly appear in the `results` folder on your computer.**
+7.  **Accessing Results**: The `-v` flag in the `docker run` command creates a live link between the container's directories and the corresponding directories on the local machine. **Any files (plots, CSVs) generated in the container will instantly appear in the `results` folder in the local filesystem.**
 
-4.  **Exit the container** by typing `exit` and pressing Enter.
+8.  **Run exit to leave the container**:
     ```bash
     exit
     ```
@@ -89,19 +88,18 @@ This is the standard way to work with the tool. It starts a shell inside the con
 
 ## Alternative: Local Conda Workflow
 
-If you prefer not to use Docker, you can set up a local Conda environment. This workflow is also cross-platform.
+The project can also be run using conda. This, however, requires the manual installation of the required packages. Since this project and the corresponding `requirements.yaml` was developed on a Debian System, the setup on a Windows machine may require the manual installation of some packages. 
 
 ### Prerequisites
 - **Miniconda or Anaconda**: Must be installed on your system.
 
 ### Step 1: Get the Project Files
 
-1.  **Clone the repository** and navigate into the project directory as described in the Docker workflow.
-2.  **Prepare Data**: Ensure your data is in the `data/raw` directory.
+1. **Clone the repository** and navigate into the project directory as described in the Docker workflow.
 
 ### Step 2: Create and Activate the Conda Environment
 
-1.  **Create the environment**: From the project's root directory, run the following command. It will create a new Conda environment named `mef-germany` using the `environment_clean.yaml` file. Since this file contains only the base packages, you may need to install further packages on the go.
+2. **Create the environment**: From the project's root directory, run the following command. It will create a new Conda environment named `mef-germany` using the `environment_clean.yaml` file. Since this file contains only the base packages, you may need to install further packages on the go.
     ```bash
     conda env create -f environment_clean.yaml
     ```
@@ -110,7 +108,7 @@ If you prefer not to use Docker, you can set up a local Conda environment. This 
     conda env create -f environment.yaml
     ```
 
-2.  **Activate the environment**: You must activate the environment each time you open a new terminal to work on the project.
+3.  **Activate the environment**: You must activate the environment each time you open a new terminal to work on the project.
     ```bash
     conda activate mef-germany
     ```
@@ -118,19 +116,18 @@ If you prefer not to use Docker, you can set up a local Conda environment. This 
 
 ### Step 3: Install the Project
 
-This step makes the `mef` command-line tool available within your activated environment.
+This step installes the `mef` command-line tool within the activated environment.
 
-1.  **Run the installation**:
+4.  **Run the installation**:
     ```bash
     pip install -e .
     ```
-    *(The `-e` flag stands for "editable", meaning changes you make to the source code will be immediately effective without needing to reinstall.)*
 
 ### Step 4: Run the Analysis
 
-With the `mef-germany` environment active, you can now use the `mef` tool directly.
+With the `mef-germany` environment active, the `mef`-tool can be used directly.
 
-1.  **Execute commands** as needed:
+5.  **Execute commands** as needed:
     ```bash
     # Check if the tool is installed correctly
     mef --version
@@ -140,12 +137,18 @@ With the `mef-germany` environment active, you can now use the `mef` tool direct
 
     # Run an analysis
     mef analysis run --operator Amprion --year 2023
+    
+    # Run the validation
+    mef validation run --operator Amprion --year 2023
+    
+    # After running analysis and validation for all datasets run cross-regional validation
+    mef validation cross-regional
     ```
 
-2.  **Accessing Results**: Since you are running locally, all results will be saved directly into the `results` directory within your project folder.
+6.  **Accessing Results**: Since the project is running locally, all results will be saved directly into the `results` directory within the local filesystem.
 
 ### Deactivating the Environment
-When you are finished, you can deactivate the environment:
+When finished, the environment can be deactivated:
 ```bash
 conda deactivate
 ```
@@ -227,7 +230,7 @@ mef validation cross-regional [OPTIONS]
 *   **`synchtex`**: Synchronizes the analysis output with LaTeX files.
 *   **`listapis`**: Lists available APIs to fetch data from.
 
-### 6. Workflow Sequence Diagram
+## Workflow Sequence Diagram
 
 The following diagram illustrates the complete workflow, from data preprocessing to analysis and validation, including file interactions.
 
