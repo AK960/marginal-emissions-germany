@@ -225,11 +225,8 @@ class MEFValidator:
             logger.warning("Columns 'delta_generation' or 'delta_emissions' not found, skipping Test 2.1.")
             return
 
-        # 1. Resample 15-min deltas to hourly deltas by summing them up
-        df_hourly_deltas = self.df[['delta_generation', 'delta_emissions']].resample('h').sum()
-        
         # 2. Drop the first row which might be incomplete and cause an outlier
-        df_reg = df_hourly_deltas.iloc[1:].dropna()
+        df_reg = self.df[['delta_generation', 'delta_emissions']].iloc[1:].dropna()
         
         if len(df_reg) < 2:
             logger.warning("Not enough hourly data points to run regression for Test 2.1. Skipping.")

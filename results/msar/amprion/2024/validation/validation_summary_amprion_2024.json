@@ -14,10 +14,10 @@
     "Test 2.1": {
         "Description": "Empirical Annual Averages",
         "Result": {
-            "Empirical Annual MEF (g/kWh)": "775.35",
+            "Empirical Annual MEF (g/kWh)": "840.95",
             "Model Annual Average MEF (g/kWh)": "619.68",
-            "Mean Absolute Percentage Error (%)": "25.12",
-            "R-squared of Empirical MEF": "0.6886"
+            "Mean Absolute Percentage Error (%)": "35.71",
+            "R-squared of Empirical MEF": "0.7076"
         }
     },
     "Test 2.2": {

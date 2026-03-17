@@ -219,24 +219,17 @@ def run_validation_command(operator, year, is_test, num_iterations):
 
     for file_path in files_to_process:
         _run_validation(file_path, is_test)
-
-@validation_group.command(name='cross-regional')
-@click.option(
-    '--is-test', '-t',
-    is_flag=True,
-    help='Flag to indicate a test run.'
-)
-def cross_regional_command(is_test):
-    """Run the cross-regional validation test (Test 2.2)."""
+        
+    # After individual validations, run the cross-regional validation
     logger.info("Starting cross-regional validation...")
-    validator = CrossRegionalValidator(is_test=is_test)
+    cross_regional_validator = CrossRegionalValidator(is_test=is_test)
     
-    results = validator.collect_results()
+    results = cross_regional_validator.collect_results()
     
     if results:
-        correlation = validator.run_correlation_test(results)
-        validator.plot_correlation(results, correlation)
-        validator.update_individual_summaries(results, correlation)
+        correlation = cross_regional_validator.run_correlation_test(results)
+        cross_regional_validator.plot_correlation(results, correlation)
+        cross_regional_validator.update_individual_summaries(results, correlation)
         logger.info("Cross-regional validation completed successfully.")
     else:
         logger.warning("Cross-regional validation could not be performed.")

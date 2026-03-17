@@ -158,11 +158,8 @@ With the `mef-germany` environment active, the `mef`-tool can be used directly.
     # Run an analysis
     mef analysis run --operator Amprion --year 2023
     
-    # Run the validation
-    mef validation run --operator Amprion --year 2023
-    
-    # After running analysis and validation for all datasets run cross-regional validation
-    mef validation cross-regional
+    # Run the validation for one or all results. This also runs the cross-regional tests.
+    mef validation run --operator All --year All
     ```
 
 6.  **Accessing Results**: Since the project is running locally, all results will be saved directly into the `results` directory within the local filesystem.
@@ -219,30 +216,17 @@ mef analysis run [OPTIONS]
 
 ### 4. Validation
 
-The `validation` commands are used to validate the results of the analysis.
-
-#### `validation run`
-Runs the main validation on the results for a specific TSO and year.
+The `validation run` command validates the analysis results. It performs a series of tests on the data for a specific TSO and year (or all of them). After completing the individual validations, it automatically runs a cross-regional analysis to compare results across different grid areas.
 
 ```bash
 mef validation run [OPTIONS]
 ```
 
 **Options:**
-* `--operator`, `-tso`: The TSO to validate.
-* `--year`, `-y`: The year to validate.
+* `--operator`, `-tso`: The TSO to validate (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`, `All`).
+* `--year`, `-y`: The year to validate (`2023`, `2024`, `All`).
 * `--is-test`, `-t`: Whether to use test results.
 * `--num-iterations`: The number of iterations for the test run.
-
-#### `validation cross-regional`
-Runs a cross-regional validation test.
-
-```bash
-mef validation cross-regional [OPTIONS]
-```
-
-**Options:**
-* `--is-test`, `-t`: Whether to use test results.
 
 ### 5. Other Commands
 
@@ -313,8 +297,8 @@ sequenceDiagram
     end
     CLI-->>User: Log success/failure
 
-    User->>CLI: mef validation run --operator TenneT --year 2023
-    CLI->>CLI: _get_validation_files('TenneT', '2023')
+    User->>CLI: mef validation run --operator All --year All
+    CLI->>CLI: _get_validation_files('All', 'All')
     loop For each found file
         Files-->>CLI: Read (results/.../mef_final.csv)
         Files-->>CLI: Read (data/processed/final_*.csv)
@@ -324,9 +308,7 @@ sequenceDiagram
         MEFValidator->>Files: Write Plots (results/.../validation/*.png)
         MEFValidator->>Files: Write Data (results/.../validation/validation_summary_*.json)
     end
-    CLI-->>User: Log success/failure
 
-    User->>CLI: mef validation cross-regional
     CLI->>CrossRegionalValidator: __init__(is_test)
     CLI->>CrossRegionalValidator: collect_results()
     Files-->>CrossRegionalValidator: Read (results/.../validation/validation_summary_*.json)
