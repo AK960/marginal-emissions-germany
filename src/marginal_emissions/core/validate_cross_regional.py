@@ -88,7 +88,7 @@ class CrossRegionalValidator:
 
             # Annotate points with labels
             for i, row in df.iterrows():
-                ax.text(row['coal_share'] + 0.5, row['avg_mef'], row['label'], fontsize=9)
+                ax.text(row['coal_share'] + 0.5, row['avg_mef'], row['label'])
 
             ax.set_title(f'Cross-Regional MEF vs. Coal Share\nCorrelation = {correlation:.4f}')
             ax.set_xlabel('Annual Coal Share in Generation Mix (%)')

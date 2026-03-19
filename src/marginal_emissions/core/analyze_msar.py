@@ -103,6 +103,9 @@ class MSARAnalyzer:
             # Check input data
             df = self._set_types(df)
 
+            # Winsorize data to handle extreme outliers
+            df = self._winsorize_data(df)
+
             # Fill any NaNs created by asfreq (if gaps existed) or shift
             if df.isnull().values.any():
                 # Interpolate by time to avoid hard jumps & drop remaining NaNs
@@ -224,6 +227,29 @@ class MSARAnalyzer:
             logger.error(f"Failed to run analysis. Exit with error: {e}")
 
     # ____________________ Private functions ____________________#
+    @staticmethod
+    def _winsorize_data(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Clips outliers at the 0.5% and 99.5% percentiles to reduce the effect of outliers on the analysis.
+        """
+        logger.info("Winsorizing data at 0.5% and 99.5% percentiles...")
+        
+        winsor_limits = {
+            'delta_generation': (-140.25, 147.50),
+            'delta_emissions': (-99.66, 106.67)
+        }
+
+        for col, (lower, upper) in winsor_limits.items():
+            if col in df.columns:
+                n_outliers_lower = (df[col] < lower).sum()
+                n_outliers_upper = (df[col] > upper).sum()
+                
+                if n_outliers_lower > 0 or n_outliers_upper > 0:
+                    logger.info(f"Clipping {n_outliers_lower} lower and {n_outliers_upper} upper outliers in '{col}'.")
+                    df[col] = df[col].clip(lower=lower, upper=upper)
+        
+        return df
+
     # ---------- Model fitting ----------#
     def _process_window(self, i, prep_data):
         """
@@ -602,7 +628,8 @@ class MSARAnalyzer:
             ax.plot(df_plot.index, df_plot['delta_emissions'], label='Original Emissions', alpha=0.7, linestyle='--',
                     color='tab:orange')
             ax.set_title(
-                f"{self.tso_display} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |")
+                f"{self.tso_display} ({self.year})\n| R² = {r2:.4f} | MAE = {mae:.4f} | MSE = {mse:.4f} | RMSE = {rmse:.4f} |"
+            )
             ax.set_ylabel("Emissions (Scaled)")
             ax.set_xlabel("Time")
             ax.legend()
@@ -647,7 +674,7 @@ class MSARAnalyzer:
         # 3. Create diagnostic plots (2x2 grid)
         with plt.style.context('default'):
             fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-            fig.suptitle(f'Residual Diagnostics for {self.tso_display} ({self.year})', fontsize=16)
+            fig.suptitle(f'Residual Diagnostics for {self.tso_display} ({self.year})')
 
             # Plot 1: Residuals over Time
             axes[0, 0].plot(residuals.index, residuals, color='tab:blue', linewidth=0.7, alpha=0.8)
