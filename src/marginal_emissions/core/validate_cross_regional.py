@@ -100,9 +100,9 @@ class CrossRegionalValidator:
             # Save the same plot to each validation directory
             for item in results_data:
                 target_dir = Path(item['file_path']).parent
-                plot_path = target_dir / f"2.2_cross_regional_coal_correlation.png"
+                plot_path = target_dir / f"2.2_cross_regional_coal_correlation.pdf"
                 try:
-                    fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
+                    fig.savefig(plot_path, bbox_inches='tight')
                     logger.info(f"Saved cross-regional correlation plot to {target_dir}")
                 except Exception as e:
                     logger.error(f"Failed to save cross-regional plot to {target_dir}: {e}")

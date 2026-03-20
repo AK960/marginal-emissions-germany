@@ -638,7 +638,7 @@ class MSARAnalyzer:
 
             save_dir = self._get_save_dir()
             os.makedirs(save_dir, exist_ok=True)
-            filename = save_dir / "estimated_emissions.png"
+            filename = save_dir / "estimated_emissions.pdf"
 
             try:
                 fig.savefig(filename, bbox_inches='tight')
@@ -711,9 +711,9 @@ class MSARAnalyzer:
         save_dir = self._get_save_dir()
         os.makedirs(save_dir, exist_ok=True)
 
-        plot_filename = save_dir / "residual_diagnostics.png"
+        plot_filename = save_dir / "residual_diagnostics.pdf"
         try:
-            fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+            fig.savefig(plot_filename, bbox_inches='tight')
             logger.info(f"Saved residual diagnostics plot to {plot_filename}")
         except Exception as e:
             logger.error(f"Failed to save residual diagnostics plot: {e}")
@@ -785,10 +785,9 @@ class MSARAnalyzer:
             plt.tight_layout()
 
             save_dir = self._get_save_dir()
-            plot_filename = save_dir / "sawtooth_debug_profile_smoothed.png"
+            plot_filename = save_dir / "sawtooth_debug_profile_smoothed.pdf"
             try:
-                # facecolor='white' verhindert Darstellungsfehler im IDE Dark-Mode
-                fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+                fig.savefig(plot_filename, bbox_inches='tight')
                 logger.info(f"Saved sawtooth debug plot to {plot_filename}")
             except Exception as e:
                 logger.error(f"Failed to save sawtooth debug plot: {e}")
@@ -826,8 +825,8 @@ class MSARAnalyzer:
             ax.set_xlim(dummy_day[0], dummy_day[-1])
 
             # 5. Labels and layout
-            ax.set_title(f'Durchschnittliches Tagesprofil des MEF ({self.tso_display}, {self.year})')
-            ax.set_xlabel('Uhrzeit')
+            ax.set_title(f'Average Daily Profile of the MEF ({self.tso_display}, {self.year})')
+            ax.set_xlabel('Time')
             ax.set_ylabel('MEF (t CO₂ / MWh)')
 
             ax.grid(True, alpha=0.3)
@@ -838,10 +837,9 @@ class MSARAnalyzer:
 
             # 6. Save the figure
             save_dir = self._get_save_dir()
-            plot_filename = save_dir / "mef_avg_daily_profile.png"
+            plot_filename = save_dir / "mef_avg_daily_profile.pdf"
             try:
-                # facecolor='white' verhindert Darstellungsfehler im IDE Dark-Mode
-                fig.savefig(plot_filename, bbox_inches='tight', facecolor='white')
+                fig.savefig(plot_filename, bbox_inches='tight')
                 logger.info(f"Saved average daily profile plot to {plot_filename}")
             except Exception as e:
                 logger.error(f"Failed to save average daily profile plot: {e}")

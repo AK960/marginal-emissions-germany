@@ -205,9 +205,9 @@ class MEFValidator:
 
             plt.tight_layout()
 
-            plot_path = self.save_dir / f"1_mef_bounds_plot_{self.tso}_{self.year}.png"
+            plot_path = self.save_dir / f"1_mef_bounds_plot_{self.tso}_{self.year}.pdf"
             try:
-                fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
+                fig.savefig(plot_path, bbox_inches='tight')
                 logger.info(f"Saved MEF bounds plot with clean stepped line and intensity values in legend.")
             except Exception as e:
                 logger.error(f"Failed to save MEF bounds plot: {e}")
@@ -263,6 +263,7 @@ class MEFValidator:
         logger.info("Test 2.1 (Empirical Annual MEF): Saved empirical annual MEF results.")
         
         self._plot_empirical_annual_mef(df_reg, model)
+        self._plot_mef_distribution_comparison(model_avg_mef, empirical_mef_g_kwh)
 
     def _plot_empirical_annual_mef(self, data, model):
         """
@@ -291,12 +292,46 @@ class MEFValidator:
             ax.legend()
             
             fig.tight_layout()
-            plot_path = self.save_dir / f"2.1_empirical_annual_mef_{self.tso}_{self.year}.png"
+            plot_path = self.save_dir / f"2.1_empirical_annual_mef_{self.tso}_{self.year}.pdf"
             try:
-                fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
+                fig.savefig(plot_path, bbox_inches='tight')
                 logger.info(f"Test 2.1 Saved empirical annual MEF plot.")
             except Exception as e:
                 logger.error(f"Failed to save empirical annual MEF plot: {e}")
+            finally:
+                plt.close(fig)
+
+    def _plot_mef_distribution_comparison(self, model_avg_mef, empirical_mef):
+        """
+        Plots the distribution of the modeled MEF and compares it with the empirical MEF.
+        """
+        # noinspection PyTypeChecker
+        with plt.style.context('default'):
+            fig, ax = plt.subplots(figsize=(8, 5))
+
+            # Plot the density of the modeled MEF
+            sns.kdeplot(self.df['mef_g_kWh'], ax=ax, color='tab:blue', fill=True, label='MSAR MEF Distribution')
+
+            # Add vertical lines for the means
+            ax.axvline(model_avg_mef, color='tab:cyan', linestyle='--', linewidth=2,
+                        label=f'Model Avg. MEF ({model_avg_mef:.2f} g/kWh)')
+            ax.axvline(empirical_mef, color='tab:orange', linestyle='--', linewidth=2,
+                        label=f'Empirical MEF ({empirical_mef:.2f} g/kWh)')
+
+            # Formatting
+            ax.set_title(f'Distribution of Modeled MEF vs. Empirical MEF\n{self.tso_display} ({self.year})')
+            ax.set_xlabel('Marginal Emission Factor (gCO2/kWh)')
+            ax.set_ylabel('Density')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+            fig.tight_layout()
+            plot_path = self.save_dir / f"2.1_density_function_{self.tso}_{self.year}.pdf"
+            try:
+                fig.savefig(plot_path, bbox_inches='tight')
+                logger.info(f"Saved MEF distribution comparison plot.")
+            except Exception as e:
+                logger.error(f"Failed to save MEF distribution comparison plot: {e}")
             finally:
                 plt.close(fig)
 
@@ -387,8 +422,8 @@ class MEFValidator:
         plt.xlabel("")
         plt.tight_layout()
 
-        plot_path = self.save_dir / f"3_mef_net_demand_boxplot_{self.tso}_{self.year}.png"
-        plt.savefig(plot_path)
+        plot_path = self.save_dir / f"3_mef_net_demand_boxplot_{self.tso}_{self.year}.pdf"
+        plt.savefig(plot_path, bbox_inches='tight')
         plt.close()
         logger.info(f"Saved Net-Demand Boxplot.")
 
@@ -449,9 +484,9 @@ class MEFValidator:
             fig.tight_layout()
 
             # Save the figure
-            plot_path = self.save_dir / f"3_percentile_mef_vs_netdemand_{self.tso}_{self.year}.png"
+            plot_path = self.save_dir / f"3_percentile_mef_vs_netdemand_{self.tso}_{self.year}.pdf"
             try:
-                fig.savefig(plot_path, bbox_inches='tight', facecolor='white')
+                fig.savefig(plot_path, bbox_inches='tight')
                 logger.info(f"Saved percentile MEF plot.")
             except Exception as e:
                 logger.error(f"Failed to save percentile MEF plot: {e}")
