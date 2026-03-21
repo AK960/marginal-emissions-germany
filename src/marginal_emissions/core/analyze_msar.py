@@ -638,7 +638,7 @@ class MSARAnalyzer:
 
             save_dir = self._get_save_dir()
             os.makedirs(save_dir, exist_ok=True)
-            filename = save_dir / "estimated_emissions.pdf"
+            filename = save_dir / f"estimated_emissions_{self.tso}_{self.year}.pdf"
 
             try:
                 fig.savefig(filename, bbox_inches='tight')
