@@ -59,7 +59,7 @@ GEN_COLS = {
 MAX_EF_DICT = {
     'lignite_generation': 1360,             # ifo-Institut (Buchal et al. 2019)
     'hard_coal_generation': 1060,           # ifo-Institut (Buchal et al. 2019)
-    'other_conventionals_generation': 870,  # ifo-Institut (Buchal et al. 2019): Heizöl schwer weil dreckigstes in Kategorie
+    'other_conventionals_generation': 870,  # ifo-Institut (Buchal et al. 2019): Schweres Heizöl, dreckigster Typ in Kategorie
     'fossile_gas_generation': 550           # ifo-Institut (Buchal et al. 2019)
 }
 

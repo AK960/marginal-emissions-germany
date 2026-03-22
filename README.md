@@ -228,7 +228,18 @@ mef validation run [OPTIONS]
 * `--is-test`, `-t`: Whether to use test results.
 * `--num-iterations`: The number of iterations for the test run.
 
-### 5. Other Commands
+### 5. Evaluation
+
+The `evaluation run` command runs a post-analysis evaluation of the results. It generates additional comparative plots (e.g., daily and seasonal profiles) and performs a global regime analysis for a deeper interpretation of the model's behavior.
+
+```bash
+mef evaluation run [OPTIONS]
+```
+
+**Options:**
+* `--tso`: The TSO to evaluate (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`, `All`).
+
+### 6. Other Commands
 
 *   **`inspect dirs`**: Lists all subdirectories in a given path.
 *   **`synchtex`**: Synchronizes the analysis output with LaTeX files.
@@ -246,6 +257,7 @@ sequenceDiagram
     participant MSARAnalyzer
     participant MEFValidator
     participant CrossRegionalValidator
+    participant MEFEvaluator
     participant Files
 
     User->>CLI: mef prep
@@ -279,16 +291,16 @@ sequenceDiagram
         CLI->>MSARAnalyzer: fit_compute()
         
         MSARAnalyzer->>MSARAnalyzer: _plot_results()
-        MSARAnalyzer->>Files: Write Plot (results/.../estimated_emissions.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../estimated_emissions.pdf)
         
         MSARAnalyzer->>MSARAnalyzer: _plot_sawtooth_debug()
-        MSARAnalyzer->>Files: Write Plot (results/.../sawtooth_debug_profile_smoothed.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../sawtooth_debug_profile_smoothed.pdf)
 
         MSARAnalyzer->>MSARAnalyzer: _plot_avg_daily_profile()
-        MSARAnalyzer->>Files: Write Plot (results/.../mef_avg_daily_profile.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../mef_avg_daily_profile.pdf)
         
         MSARAnalyzer->>MSARAnalyzer: _diagnose_residuals()
-        MSARAnalyzer->>Files: Write Plot (results/.../residual_diagnostics.png)
+        MSARAnalyzer->>Files: Write Plot (results/.../residual_diagnostics.pdf)
         MSARAnalyzer->>Files: Write Data (results/.../residual_diagnostics.json)
 
         MSARAnalyzer->>Files: Write Data (results/.../mef_final.csv)
@@ -305,7 +317,7 @@ sequenceDiagram
         Files-->>CLI: Read (data/raw/other/smard/*.csv)
         CLI->>MEFValidator: __init__(data, tso, year, save_dir)
         CLI->>MEFValidator: run_validation()
-        MEFValidator->>Files: Write Plots (results/.../validation/*.png)
+        MEFValidator->>Files: Write Plots (results/.../validation/*.pdf)
         MEFValidator->>Files: Write Data (results/.../validation/validation_summary_*.json)
     end
 
@@ -314,11 +326,27 @@ sequenceDiagram
     Files-->>CrossRegionalValidator: Read (results/.../validation/validation_summary_*.json)
     CrossRegionalValidator->>CrossRegionalValidator: run_correlation_test()
     CrossRegionalValidator->>CrossRegionalValidator: plot_correlation()
-    CrossRegionalValidator->>Files: Write Plots (results/.../validation/2.2_cross_regional_coal_correlation.png)
+    CrossRegionalValidator->>Files: Write Plots (results/.../validation/2.2_cross_regional_coal_correlation.pdf)
     CrossRegionalValidator->>CrossRegionalValidator: update_individual_summaries()
     Files-->>CrossRegionalValidator: Read (results/.../validation/validation_summary_*.json)
     CrossRegionalValidator->>Files: Write Data (results/.../validation/validation_summary_*.json)
     CrossRegionalValidator-->>CLI: Return results
+    CLI-->>User: Log success/failure
+    
+    User->>CLI: mef evaluation run --tso TenneT
+    CLI->>MEFEvaluator: __init__(tso)
+    Files-->>MEFEvaluator: Read all data for TSO
+    CLI->>MEFEvaluator: run_evaluation()
+    MEFEvaluator->>MEFEvaluator: plot_daily_profiles()
+    MEFEvaluator->>Files: Write Plot (results/msar/tennet/average_daily_profile_mef_aef.pdf)
+    MEFEvaluator->>MEFEvaluator: plot_seasonal_daily_profiles()
+    MEFEvaluator->>Files: Write Plot (results/msar/tennet/average_seasonal_daily_profile.pdf)
+    loop For each year
+        MEFEvaluator->>MEFEvaluator: analyze_global_regimes(year)
+        MEFEvaluator->>Files: Write Summary (results/msar/tennet/global_regime_summary_{year}.txt)
+        MEFEvaluator->>Files: Write Plot (results/msar/tennet/global_regime_plot_{year}.pdf)
+    end
+    MEFEvaluator-->>CLI: Return results
     CLI-->>User: Log success/failure
 ```
 

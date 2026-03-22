@@ -312,11 +312,19 @@ class MEFValidator:
             # Plot the density of the modeled MEF
             sns.kdeplot(self.df['mef_g_kWh'], ax=ax, color='tab:blue', fill=True, label='MSAR MEF Distribution')
 
+            # Calculate Median and Mode
+            mef_median = self.df['mef_g_kWh'].median()
+            mef_mode = self.df['mef_g_kWh'].mode()[0]
+
             # Add vertical lines for the means
             ax.axvline(model_avg_mef, color='tab:cyan', linestyle='--', linewidth=2,
                         label=f'Model Avg. MEF ({model_avg_mef:.2f} g/kWh)')
             ax.axvline(empirical_mef, color='tab:orange', linestyle='--', linewidth=2,
                         label=f'Empirical MEF ({empirical_mef:.2f} g/kWh)')
+            ax.axvline(mef_median, color='tab:green', linestyle=':', linewidth=2,
+                        label=f'Median ({mef_median:.2f} g/kWh)')
+            ax.axvline(mef_mode, color='tab:purple', linestyle=':', linewidth=2,
+                        label=f'Mode ({mef_mode:.2f} g/kWh)')
 
             # Formatting
             ax.set_title(f'Distribution of Modeled MEF vs. Empirical MEF\n{self.tso_display} ({self.year})')
@@ -439,21 +447,15 @@ class MEFValidator:
 
         df_plot = self.df[['net_demand', 'mef_g_kWh']].dropna().copy()
 
-        # Convert units for plotting
-        # Net demand from MWh (per 15min) to average GW
-        df_plot['net_demand_gw'] = (df_plot['net_demand'] / 0.25) / 1000
-        # MEF from g/kWh to lbs/MWh (1 g/kWh = 2.20462 lbs/MWh)
-        df_plot['mef_lbs_mwh'] = df_plot['mef_g_kWh'] * 2.20462
-
         # Create 40 percentile bins (2.5% each) from net demand
         try:
-            df_plot['percentile_bin'] = pd.qcut(df_plot['net_demand_gw'], q=40, labels=False, duplicates='drop')
+            df_plot['percentile_bin'] = pd.qcut(df_plot['net_demand'], q=40, labels=False, duplicates='drop')
         except ValueError:
             logger.warning("Could not create percentile bins due to non-unique bin edges. Skipping percentile plot.")
             return
         
         # Calculate the mean of MEF and Net Demand for each bin
-        percentile_data = df_plot.groupby('percentile_bin')[['net_demand_gw', 'mef_lbs_mwh']].mean()
+        percentile_data = df_plot.groupby('percentile_bin')[['net_demand', 'mef_g_kWh']].mean()
         
         # Create an x-axis representing the midpoint of each percentile bin
         x_axis = (percentile_data.index + 0.5) * (100 / 40)
@@ -466,16 +468,16 @@ class MEFValidator:
             # Plot Net Demand on the left axis (ax1)
             color1 = 'tab:orange'
             ax1.set_xlabel('Net Demand Percentile')
-            ax1.set_ylabel('Net Demand (GW)', color=color1)
-            ax1.plot(x_axis, percentile_data['net_demand_gw'], color=color1, label='Net Demand (GW)')
+            ax1.set_ylabel('Net Demand (MWh per 15min)', color=color1)
+            ax1.plot(x_axis, percentile_data['net_demand'], color=color1, label='Net Demand')
             ax1.tick_params(axis='y', labelcolor=color1)
             ax1.xaxis.set_major_formatter(mticker.PercentFormatter())
 
             # Create a second y-axis for the MEF
             ax2 = ax1.twinx()
             color2 = 'tab:blue'
-            ax2.set_ylabel('Percentile MEF (lbs / MWh)', color=color2)
-            ax2.plot(x_axis, percentile_data['mef_lbs_mwh'], color=color2, label='Percentile MEF (lbs / MWh)')
+            ax2.set_ylabel('Marginal Emission Factor (gCO2/kWh)', color=color2)
+            ax2.plot(x_axis, percentile_data['mef_g_kWh'], color=color2, label='MEF')
             ax2.tick_params(axis='y', labelcolor=color2)
 
             # Title and layout

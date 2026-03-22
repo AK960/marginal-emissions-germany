@@ -6,6 +6,7 @@ from marginal_emissions.cli.listapis_cli import listapis_group
 from marginal_emissions.cli.fetch_cli import fetch_group
 from marginal_emissions.cli.preprocess_cli import prep
 from marginal_emissions.cli.analyze_cli import analysis_group
+from marginal_emissions.cli.evaluate_cli import evaluation
 from importlib.metadata import version
 
 @click.group()
@@ -29,6 +30,7 @@ def register_commands():
     cli.add_command(prep)
     cli.add_command(analysis_group, name='analysis')
     cli.add_command(validation_group, name='validation')
+    cli.add_command(evaluation, name='evaluation')
 
 register_commands()
 
