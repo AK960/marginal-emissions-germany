@@ -238,6 +238,7 @@ mef evaluation run [OPTIONS]
 
 **Options:**
 * `--tso`: The TSO to evaluate (`50Hertz`, `Amprion`, `TenneT`, `TransnetBW`, `All`).
+* `--skip-fitting`: If set, skips the computationally intensive global model fitting and only regenerates the plots.
 
 ### 6. Other Commands
 

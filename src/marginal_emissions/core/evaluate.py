@@ -18,7 +18,7 @@ from marginal_emissions.vars import RESULTS_DIR, DATA_DIR
 
 
 class MEFEvaluator:
-    def __init__(self, tso: str):
+    def __init__(self, tso: str, skip_fitting: bool = False):
         """
         Initialize the evaluator for a specific TSO.
         """
@@ -27,6 +27,7 @@ class MEFEvaluator:
         self.results_path = RESULTS_DIR / 'msar'
         self.data_path = DATA_DIR / 'processed'
         self.all_data = {}
+        self.skip_fitting = skip_fitting
         self._load_data_for_all_years()
 
     def _load_data_for_all_years(self):
@@ -52,8 +53,9 @@ class MEFEvaluator:
         """Runs all evaluation and plotting methods."""
         self.plot_daily_profiles()
         self.plot_seasonal_daily_profiles()
-        for year in self.all_data.keys():
-            self.analyze_global_regimes(year)
+        if not self.skip_fitting:
+            for year in self.all_data.keys():
+                self.analyze_global_regimes(year)
 
     def plot_daily_profiles(self):
         """Plots the average daily profiles of MEF and AEF for all available years."""
@@ -68,17 +70,21 @@ class MEFEvaluator:
                 if 'mef_results' in data:
                     df_mef = data['mef_results']
                     daily_avg_mef = df_mef.groupby(df_mef.index.time)['mef_g_kWh'].mean()
+                    min_mef = daily_avg_mef.min()
+                    max_mef = daily_avg_mef.max()
                     dummy_day = pd.date_range(start="2024-01-01", periods=len(daily_avg_mef), freq='15min')
                     daily_avg_mef.index = dummy_day
-                    ax1.plot(daily_avg_mef.index, daily_avg_mef.values, label=f'Avg. MEF {year}', color=color, linestyle='-')
+                    ax1.plot(daily_avg_mef.index, daily_avg_mef.values, label=f'Avg. MEF {year} (Min: {min_mef:.2f}, Max: {max_mef:.2f})', color=color, linestyle='-')
                 
                 if 'mef_data' in data:
                     df_data_year = data['mef_data'].copy()
                     df_data_year['aef_g_kWh'] = (df_data_year['total_emissions'] / df_data_year['total_generation_all']) * 1000
                     daily_avg_aef = df_data_year.groupby(df_data_year.index.time)['aef_g_kWh'].mean()
+                    min_aef = daily_avg_aef.min()
+                    max_aef = daily_avg_aef.max()
                     dummy_day_aef = pd.date_range(start="2024-01-01", periods=len(daily_avg_aef), freq='15min')
                     daily_avg_aef.index = dummy_day_aef
-                    ax2.plot(daily_avg_aef.index, daily_avg_aef.values, label=f'Avg. AEF {year}', color=color, linestyle='--')
+                    ax2.plot(daily_avg_aef.index, daily_avg_aef.values, label=f'Avg. AEF {year} (Min: {min_aef:.2f}, Max: {max_aef:.2f})', color=color, linestyle='--')
 
             ax1.xaxis.set_major_locator(mdates.HourLocator(interval=2))
             ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
@@ -120,9 +126,11 @@ class MEFEvaluator:
                         ls = linestyles[season_name]
                         if not df_season.empty:
                             daily_avg = df_season.groupby(df_season.index.time)['mef_g_kWh'].mean()
+                            min_mef = daily_avg.min()
+                            max_mef = daily_avg.max()
                             dummy_day = pd.date_range(start="2024-01-01", periods=len(daily_avg), freq='15min')
                             daily_avg.index = dummy_day
-                            ax.plot(daily_avg.index, daily_avg.values, label=f'{season_name} {year}', color=color, linestyle=ls)
+                            ax.plot(daily_avg.index, daily_avg.values, label=f'{season_name} {year} (Min: {min_mef:.2f}, Max: {max_mef:.2f})', color=color, linestyle=ls)
 
             ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
