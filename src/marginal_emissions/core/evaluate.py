@@ -198,7 +198,6 @@ class MEFEvaluator:
         best_aic = float('inf')
         best_converged = False
 
-        # --- ÄNDERUNG 1: Statusanzeige für den Grid Search ---
         grid_list = list(ParameterGrid(param_grid))
         total_models = len(grid_list)
         logger.info(f"Starting grid search over {total_models} parameter combinations...")
@@ -258,10 +257,8 @@ class MEFEvaluator:
         logger.info(f"Model summary saved successfully.")
 
         with plt.style.context('default'):
-            # --- ÄNDERUNG 2: Dynamische Anzahl an Subplots (2 feste + Anzahl der Regime) ---
             num_subplots = 2 + result.k_regimes
 
-            # Die Höhe des Plots wird leicht dynamisch angepasst, damit es ordentlich aussieht
             fig, axes = plt.subplots(num_subplots, 1, figsize=(15, 3 * num_subplots), sharex=True)
             fig.suptitle(f'Global Regime Analysis for {self.tso_display} ({year})', fontsize=16)
             plot_colors = ['tab:green', 'tab:red', 'tab:blue', 'tab:orange', 'tab:purple']

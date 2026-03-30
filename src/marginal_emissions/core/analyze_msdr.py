@@ -1,5 +1,6 @@
 """
 Class for performing the MSDR analysis.
+Legacy file: Does not contain TVTPs and AR terms. New model version in analyzed_msar.py.
 """
 
 import json

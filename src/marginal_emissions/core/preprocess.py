@@ -178,19 +178,13 @@ class MEFPreprocessor:
                 ief_hourly = (regional_emissions_hourly / regional_gen_hourly).replace([np.inf, -np.inf], 0).fillna(
                     0)
 
-                # --- DER GAMECHANGER: pchip Interpolation ---
-                # 'pchip' (Piecewise Cubic Hermite Interpolating Polynomial) erzeugt
-                # glatte Kurven ohne Knicke an den Stundengrenzen und verhindert
-                # unrealistisches Überschwingen (Overshooting).
+                # pchip to interpolate hard edges
                 ief_15min = ief_hourly.resample('15min').interpolate(method='pchip')
-                ief_15min = ief_15min.ffill().bfill()  # Kanten füllen
+                ief_15min = ief_15min.ffill().bfill()
 
                 # Multiply with 15-minute generation
                 raw_emissions_15min = regional_gen_15min * ief_15min
 
-                # (3 & 4) FINAL ASSIGNMENT OHNE KORREKTURFAKTOR
-                # Wir verzichten auf den Correction Factor, damit die deltas
-                # (die diffs) nicht durch künstliche Korrekturen verzerrt werden.
                 regional_emissions_15min[fuel] = raw_emissions_15min
 
             # Total emissions per control area and quarter-hour
