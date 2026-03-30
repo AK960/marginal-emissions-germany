@@ -138,6 +138,7 @@ dependencies:
   - pcre2=10.46=hf426167_0
   - pexpect=4.9.0=py313h06a4308_1
   - pillow=12.0.0=py313h3b88751_1
+  - pip=26.0.1=pyhc872135_0
   - pixman=0.46.4=h7934f7d_0
   - platformdirs=4.5.0=py313h06a4308_0
   - pluggy=1.5.0=py313h06a4308_0
@@ -251,7 +252,6 @@ dependencies:
       - numpy-typing-compat==20251206.2.4
       - optype==0.15.0
       - pandas-stubs==2.3.3.251201
-      - pip==26.0.1
       - plotly==6.5.2
       - protobuf==6.33.5
       - pyarrow==23.0.0
@@ -267,4 +267,5 @@ dependencies:
       - toml==0.10.2
       - types-pytz==2025.2.0.20251108
       - watchdog==6.0.0
+      - xlrd==2.0.2
       - zope-interface==8.1.1
